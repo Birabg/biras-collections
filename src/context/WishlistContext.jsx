@@ -1,7 +1,21 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { getWishlist, setWishlist } from '../utils/storage';
 
 const WishlistContext = createContext(null);
+
+/** Store the minimum needed to render a card and link to the product. */
+function toWishlistItem(product) {
+  return {
+    id: product.id,
+    // Links resolve against /product/:slug, so the slug must be stored
+    slug: product.slug,
+    name: product.name,
+    price: product.price,
+    compareAtPrice: product.compareAtPrice,
+    image: product.images?.[0] ?? product.image,
+    category: product.category,
+  };
+}
 
 export function WishlistProvider({ children }) {
   const [wishlist, setWishlistState] = useState([]);
@@ -12,82 +26,60 @@ export function WishlistProvider({ children }) {
     setIsLoaded(true);
   }, []);
 
-  const persistWishlist = useCallback((newWishlist) => {
-    setWishlistState(newWishlist);
-    setWishlist(newWishlist);
+  const commit = useCallback((next) => {
+    setWishlistState(next);
+    setWishlist(next);
   }, []);
 
-  const addItem = useCallback((product) => {
-    setWishlistState((prev) => {
-      if (prev.some((item) => item.id === product.id)) {
-        return prev;
-      }
-      const newWishlist = [
-        ...prev,
-        {
-          id: product.id,
-          name: product.name,
-          price: product.price,
-          compareAtPrice: product.compareAtPrice,
-          image: product.images?.[0] || product.image,
-          category: product.category,
-        },
-      ];
-      persistWishlist(newWishlist);
-      return newWishlist;
-    });
-  }, [persistWishlist]);
+  const addItem = useCallback(
+    (product) => {
+      setWishlistState((prev) => {
+        if (prev.some((item) => item.id === product.id)) return prev;
+        const next = [...prev, toWishlistItem(product)];
+        setWishlist(next);
+        return next;
+      });
+    },
+    [],
+  );
 
   const removeItem = useCallback((id) => {
     setWishlistState((prev) => {
-      const newWishlist = prev.filter((item) => item.id !== id);
-      persistWishlist(newWishlist);
-      return newWishlist;
+      const next = prev.filter((item) => item.id !== id);
+      setWishlist(next);
+      return next;
     });
-  }, [persistWishlist]);
+  }, []);
 
   const toggleItem = useCallback((product) => {
     setWishlistState((prev) => {
-      const exists = prev.some((item) => item.id === product.id);
-      if (exists) {
-        const newWishlist = prev.filter((item) => item.id !== product.id);
-        persistWishlist(newWishlist);
-        return newWishlist;
-      } else {
-        const newWishlist = [
-          ...prev,
-          {
-            id: product.id,
-            name: product.name,
-            price: product.price,
-            compareAtPrice: product.compareAtPrice,
-            image: product.images?.[0] || product.image,
-            category: product.category,
-          },
-        ];
-        persistWishlist(newWishlist);
-        return newWishlist;
-      }
+      const next = prev.some((item) => item.id === product.id)
+        ? prev.filter((item) => item.id !== product.id)
+        : [...prev, toWishlistItem(product)];
+      setWishlist(next);
+      return next;
     });
-  }, [persistWishlist]);
+  }, []);
 
-  const isInWishlist = useCallback((id) => {
-    return wishlist.some((item) => item.id === id);
-  }, [wishlist]);
+  const isInWishlist = useCallback(
+    (id) => wishlist.some((item) => item.id === id),
+    [wishlist],
+  );
 
-  const clearWishlist = useCallback(() => {
-    persistWishlist([]);
-  }, [persistWishlist]);
+  const clearWishlist = useCallback(() => commit([]), [commit]);
 
-  const value = {
-    wishlist,
-    isLoaded,
-    addItem,
-    removeItem,
-    toggleItem,
-    isInWishlist,
-    clearWishlist,
-  };
+  const value = useMemo(
+    () => ({
+      wishlist,
+      isLoaded,
+      addItem,
+      removeItem,
+      toggleItem,
+      isInWishlist,
+      clearWishlist,
+    }),
+    [wishlist, isLoaded, addItem, removeItem, toggleItem, isInWishlist, clearWishlist],
+  );
 
   return <WishlistContext.Provider value={value}>{children}</WishlistContext.Provider>;
 }

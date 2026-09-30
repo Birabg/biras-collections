@@ -1,43 +1,78 @@
 import { forwardRef } from 'react';
+import { Loader2 } from 'lucide-react';
+
+/*
+ * Button — single source of truth for every actionable element.
+ * Small radius, uppercase micro-label, restrained motion.
+ */
+const VARIANTS = {
+  primary:
+    'bg-ink text-paper border border-ink hover:bg-ink-80 active:bg-ink',
+  secondary:
+    'bg-paper text-ink border border-ink hover:bg-sand active:bg-sand-deep',
+  tertiary:
+    'bg-transparent text-ink border border-transparent hover:text-ink-60',
+  sand: 'bg-sand text-ink border border-transparent hover:bg-sand-deep',
+  danger: 'bg-error text-paper border border-error hover:brightness-110',
+};
+
+const SIZES = {
+  sm: 'h-9 px-4 text-[0.6875rem] tracking-[0.14em]',
+  md: 'h-11 px-6 text-[0.75rem] tracking-[0.14em]',
+  lg: 'h-13 px-8 text-[0.8125rem] tracking-[0.14em]',
+};
+
+const BASE =
+  'relative inline-flex select-none items-center justify-center gap-2 rounded-[2px] font-medium uppercase ' +
+  'transition-[background-color,color,border-color,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] ' +
+  'disabled:pointer-events-none disabled:opacity-40';
 
 const Button = forwardRef(
-  ({ children, variant = 'primary', size = 'md', fullWidth = false, disabled = false, loading = false, type = 'button', className = '', onClick, ...props }, ref) => {
-    const baseStyles = 'inline-flex items-center justify-center font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
-
-    const variants = {
-      primary: 'bg-black text-white hover:bg-gray-800',
-      secondary: 'bg-white text-black border border-gray-200 hover:bg-gray-50',
-      outline: 'bg-transparent text-black border border-gray-300 hover:bg-gray-50',
-      ghost: 'bg-transparent text-gray-700 hover:bg-gray-100',
-      destructive: 'bg-red-600 text-white hover:bg-red-700',
-    };
-
-    const sizes = {
-      sm: 'px-3 py-1.5 text-xs gap-1.5',
-      md: 'px-5 py-2.5 text-sm gap-2',
-      lg: 'px-7 py-3.5 text-base gap-2.5',
-      icon: 'p-2.5',
-    };
+  (
+    {
+      children,
+      variant = 'primary',
+      size = 'md',
+      fullWidth = false,
+      loading = false,
+      disabled = false,
+      type = 'button',
+      className = '',
+      iconLeft = null,
+      iconRight = null,
+      ...props
+    },
+    ref,
+  ) => {
+    const isInert = disabled || loading;
 
     return (
       <button
         ref={ref}
         type={type}
-        disabled={disabled || loading}
-        className={`${baseStyles} ${variants[variant]} ${sizes[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
-        onClick={onClick}
+        disabled={isInert}
+        aria-busy={loading || undefined}
+        className={[
+          BASE,
+          VARIANTS[variant] ?? VARIANTS.primary,
+          SIZES[size] ?? SIZES.md,
+          fullWidth ? 'w-full' : '',
+          className,
+        ]
+          .filter(Boolean)
+          .join(' ')}
         {...props}
       >
-        {loading && (
-          <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" fill="none" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
+        {loading ? (
+          <Loader2 size={15} strokeWidth={2} className="animate-spin" aria-hidden="true" />
+        ) : (
+          iconLeft
         )}
         {children}
+        {!loading && iconRight}
       </button>
     );
-  }
+  },
 );
 
 Button.displayName = 'Button';

@@ -1,195 +1,203 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Mail, Lock, User, Phone } from 'lucide-react';
+import { User, Mail, Lock, UserPlus } from 'lucide-react';
+import AuthLayout from '../components/auth/AuthLayout';
+import DemoBackendNotice from '../components/auth/DemoBackendNotice';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import { useToast } from '../components/ui/Toast';
+import { useAuth, SESSION } from '../auth/AuthContext';
+import { authErrorCopy } from '../auth/authMessages';
+
+const ASIDE = {
+  image:
+    'https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=1400&q=80',
+  quote: 'Your account, your wardrobe, your pace.',
+  caption: 'Members save favourites for later',
+};
 
 export default function Register() {
+  const { register, status } = useAuth();
   const navigate = useNavigate();
-  const toast = useToast();
-  const [formData, setFormData] = useState({
-    firstName: '',
-    lastName: '',
+
+  const [values, setValues] = useState({
+    name: '',
     email: '',
-    phone: '',
     password: '',
     confirmPassword: '',
-    terms: false,
   });
-  const [showPassword, setShowPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [errors, setErrors] = useState({});
+  const [formError, setFormError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const validate = () => {
-    const newErrors = {};
-    if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
-    if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!formData.email) newErrors.email = 'Email is required';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = 'Invalid email format';
-    if (!formData.phone.trim()) newErrors.phone = 'Phone number is required';
-    else if (!/^\+?251?9\d{8}$/.test(formData.phone.replace(/\s/g, ''))) newErrors.phone = 'Enter a valid Ethiopian phone number';
-    if (!formData.password) newErrors.password = 'Password is required';
-    else if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
-    if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
-    if (!formData.terms) newErrors.terms = 'You must accept the terms and conditions';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  useEffect(() => {
+    if (status === SESSION.AUTHENTICATED) navigate('/account', { replace: true });
+  }, [status, navigate]);
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setValues((prev) => ({ ...prev, [name]: value }));
+    setErrors((prev) => (prev[name] ? { ...prev, [name]: undefined } : prev));
+    setFormError(null);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const validate = () => {
+    const next = {};
+    if (!values.name.trim()) next.name = 'Enter your name.';
+    if (!values.email.trim()) next.email = 'Enter your email address.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim()))
+      next.email = 'Enter a valid email address.';
+    if (!values.password) next.password = 'Choose a password.';
+    else if (values.password.length < 8) next.password = 'Use at least 8 characters.';
+    if (values.confirmPassword !== values.password)
+      next.confirmPassword = 'Passwords do not match.';
+    if (!acceptedTerms) next.terms = 'Please accept the terms to continue.';
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (isSubmitting) return;
     if (!validate()) return;
 
     setIsSubmitting(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setIsSubmitting(false);
+    setFormError(null);
 
-    toast.success('Account created!', { message: 'Welcome to Bira\'s Collections' });
-    navigate('/account');
-  };
-
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
-    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
+    try {
+      await register({
+        name: values.name.trim(),
+        email: values.email.trim(),
+        password: values.password,
+        acceptedTerms,
+      });
+      navigate('/account', { replace: true });
+    } catch (error) {
+      setFormError(authErrorCopy(error));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-5 py-12">
-      <div className="w-full max-w-md bg-white rounded-xl border border-gray-100 p-8">
-        <div className="text-center mb-8">
-          <Link to="/" className="text-xl font-semibold tracking-tight inline-block mb-6">
-            Bira's <span className="font-normal">Collections</span>
+    <AuthLayout
+      title="Create an account"
+      subtitle="Save your favourites, follow your orders and check out faster."
+      aside={ASIDE}
+      footer={
+        <p className="t-body text-center">
+          Already have an account?{' '}
+          <Link to="/login" className="link-underline font-medium text-ink">
+            Sign in
           </Link>
-          <h1 className="text-2xl font-medium">Create your account</h1>
-          <p className="mt-2 text-gray-500">Join our community today</p>
+        </p>
+      }
+    >
+      <DemoBackendNotice className="mb-8" />
+
+      {formError && (
+        <div
+          className="mb-6 border border-error/25 bg-error-soft px-4 py-3"
+          role="alert"
+          aria-live="assertive"
+        >
+          <p className="text-[0.875rem] font-medium text-ink">{formError.title}</p>
+          <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-ink-60">{formError.body}</p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-5">
+        <Input
+          label="Full name"
+          name="name"
+          type="text"
+          autoComplete="name"
+          value={values.name}
+          onChange={handleChange}
+          error={errors.name}
+          icon={<User size={16} strokeWidth={1.75} />}
+          placeholder="Your name"
+          required
+        />
+
+        <Input
+          label="Email address"
+          name="email"
+          type="email"
+          autoComplete="email"
+          value={values.email}
+          onChange={handleChange}
+          error={errors.email}
+          icon={<Mail size={16} strokeWidth={1.75} />}
+          placeholder="you@example.com"
+          required
+        />
+
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Input
+            label="Password"
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            value={values.password}
+            onChange={handleChange}
+            error={errors.password}
+            icon={<Lock size={16} strokeWidth={1.75} />}
+            placeholder="8+ characters"
+            hint="At least 8 characters."
+            required
+          />
+
+          <Input
+            label="Confirm password"
+            name="confirmPassword"
+            type="password"
+            autoComplete="new-password"
+            value={values.confirmPassword}
+            onChange={handleChange}
+            error={errors.confirmPassword}
+            icon={<Lock size={16} strokeWidth={1.75} />}
+            placeholder="Repeat password"
+            required
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="First name"
-              name="firstName"
-              type="text"
-              value={formData.firstName}
-              onChange={handleChange}
-              error={errors.firstName}
-              autoComplete="given-name"
-              placeholder="First name"
-              icon={<User size={18} strokeWidth={1.7} className="text-gray-400" />}
-            />
-            <Input
-              label="Last name"
-              name="lastName"
-              type="text"
-              value={formData.lastName}
-              onChange={handleChange}
-              error={errors.lastName}
-              autoComplete="family-name"
-              placeholder="Last name"
-            />
-          </div>
-
-          <Input
-            label="Email address"
-            name="email"
-            type="email"
-            value={formData.email}
-            onChange={handleChange}
-            error={errors.email}
-            autoComplete="email"
-            placeholder="you@example.com"
-            icon={<Mail size={18} strokeWidth={1.7} className="text-gray-400" />}
-          />
-
-          <Input
-            label="Phone number"
-            name="phone"
-            type="tel"
-            value={formData.phone}
-            onChange={handleChange}
-            error={errors.phone}
-            autoComplete="tel"
-            placeholder="+251 9XX XXX XXX"
-            icon={<Phone size={18} strokeWidth={1.7} className="text-gray-400" />}
-          />
-
-          <div className="relative">
-            <Input
-              label="Password"
-              name="password"
-              type={showPassword ? 'text' : 'password'}
-              value={formData.password}
-              onChange={handleChange}
-              error={errors.password}
-              autoComplete="new-password"
-              placeholder="••••••••"
-              icon={<Lock size={18} strokeWidth={1.7} className="text-gray-400" />}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-[38px] text-gray-400 hover:text-gray-600"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              {showPassword ? <EyeOff size={18} strokeWidth={1.7} /> : <Eye size={18} strokeWidth={1.7} />}
-            </button>
-          </div>
-
-          <div className="relative">
-            <Input
-              label="Confirm password"
-              name="confirmPassword"
-              type={showPassword ? 'text' : 'password'}
-              value={formData.confirmPassword}
-              onChange={handleChange}
-              error={errors.confirmPassword}
-              autoComplete="new-password"
-              placeholder="••••••••"
-              icon={<Lock size={18} strokeWidth={1.7} className="text-gray-400" />}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-[38px] text-gray-400 hover:text-gray-600"
-              aria-label={showPassword ? 'Hide password' : 'Show password'}
-            >
-              {showPassword ? <EyeOff size={18} strokeWidth={1.7} /> : <Eye size={18} strokeWidth={1.7} />}
-            </button>
-          </div>
-
-          <div className="flex items-start gap-2">
+        <div>
+          <label className="flex cursor-pointer items-start gap-3">
             <input
               type="checkbox"
-              name="terms"
-              id="terms"
-              checked={formData.terms}
-              onChange={handleChange}
-              className="mt-1 h-4 w-4 rounded border-gray-300 text-black focus:ring-black"
-              aria-describedby="terms-error"
+              checked={acceptedTerms}
+              onChange={(event) => {
+                setAcceptedTerms(event.target.checked);
+                setErrors((prev) => ({ ...prev, terms: undefined }));
+              }}
+              className="mt-0.5 size-4 shrink-0 accent-ink"
+              aria-invalid={errors.terms ? 'true' : undefined}
+              aria-describedby={errors.terms ? 'terms-error' : undefined}
             />
-            <label htmlFor="terms" className="text-sm text-gray-600">
-              I agree to the <Link to="/terms" className="text-black underline hover:text-gray-700">Terms of Service</Link> and <Link to="/privacy" className="text-black underline hover:text-gray-700">Privacy Policy</Link>
-            </label>
-          </div>
-          {errors.terms && <p id="terms-error" className="text-sm text-red-600" role="alert">{errors.terms}</p>}
-
-          <Button type="submit" fullWidth loading={isSubmitting} className="h-12">
-            Create account
-          </Button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">
-            Already have an account?{' '}
-            <Link to="/login" className="font-medium text-black hover:underline">
-              Sign in
-            </Link>
-          </p>
+            <span className="t-caption leading-relaxed">
+              I agree to the terms of service and privacy policy, and would like to receive news
+              about new collections.
+            </span>
+          </label>
+          {errors.terms && (
+            <p id="terms-error" className="mt-1.5 text-[0.8125rem] text-error" role="alert">
+              {errors.terms}
+            </p>
+          )}
         </div>
-      </div>
-    </div>
+
+        <Button
+          type="submit"
+          size="lg"
+          fullWidth
+          loading={isSubmitting}
+          iconLeft={!isSubmitting ? <UserPlus size={15} strokeWidth={2} /> : null}
+          className="mt-2"
+        >
+          {isSubmitting ? 'Creating account' : 'Create account'}
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }

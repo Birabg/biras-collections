@@ -1,158 +1,242 @@
-import { useEffect } from 'react';
-import { X, Plus, Minus, Trash2 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
-import { formatPrice } from '../../utils/currency';
+import { useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
+import { X, Minus, Plus, ShoppingBag, ArrowRight, Trash2 } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
-import { useToast } from '../../components/ui/Toast';
-import { createPortal } from 'react-dom';
+import { useUI } from '../../context/UIContext';
+import { useToast } from '../ui/Toast';
+import { formatPrice } from '../../utils/currency';
+import Button from '../ui/Button';
+import EmptyState from '../ui/EmptyState';
 
-function CartDrawerContent({ isOpen, onClose }) {
-  const { cart, getItemCount, getSubtotal, updateQuantity, removeItem, clearCart } = useCart();
-  const { toast } = useToast();
-  const navigate = useNavigate();
+const FREE_DELIVERY_THRESHOLD = 5000;
 
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    }
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [isOpen]);
+function QuantityStepper({ item, onChange }) {
+  return (
+    <div className="inline-flex h-9 items-stretch border border-line" role="group" aria-label={`Quantity for ${item.name}`}>
+      <button
+        type="button"
+        onClick={() => onChange(item.quantity - 1)}
+        className="flex w-9 items-center justify-center text-ink-60 transition-colors hover:bg-sand hover:text-ink"
+        aria-label={`Decrease quantity of ${item.name}`}
+      >
+        <Minus size={13} strokeWidth={2} />
+      </button>
 
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-    }
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+      <span className="flex w-9 items-center justify-center border-x border-line text-[0.8125rem] tabular-nums text-ink">
+        {item.quantity}
+      </span>
 
-  if (!isOpen) return null;
+      <button
+        type="button"
+        onClick={() => onChange(item.quantity + 1)}
+        className="flex w-9 items-center justify-center text-ink-60 transition-colors hover:bg-sand hover:text-ink"
+        aria-label={`Increase quantity of ${item.name}`}
+      >
+        <Plus size={13} strokeWidth={2} />
+      </button>
+    </div>
+  );
+}
 
-  const itemCount = getItemCount();
+export default function CartDrawer() {
+  const { isCartOpen, closeCart } = useUI();
+  const { cart, getItemCount, getSubtotal, updateQuantity, removeItem } = useCart();
+  const toast = useToast();
+  const panelRef = useRef(null);
+
+  const count = getItemCount();
   const subtotal = getSubtotal();
+  const remaining = Math.max(0, FREE_DELIVERY_THRESHOLD - subtotal);
+  const qualifiesFree = subtotal >= FREE_DELIVERY_THRESHOLD;
 
-  const handleUpdateQty = (id, size, color, delta) => {
-    const item = cart.find(i => i.id === id && i.selectedSize === size && i.selectedColor === color);
-    if (item) {
-      updateQuantity(id, item.quantity + delta, size, color);
-    }
+  // Lock scroll, close on Escape, restore focus
+  useEffect(() => {
+    if (!isCartOpen) return undefined;
+
+    const { overflow } = document.body.style;
+    document.body.style.overflow = 'hidden';
+
+    const onKey = (event) => {
+      if (event.key === 'Escape') closeCart();
+    };
+    document.addEventListener('keydown', onKey);
+
+    const raf = requestAnimationFrame(() => panelRef.current?.focus());
+
+    return () => {
+      document.body.style.overflow = overflow;
+      document.removeEventListener('keydown', onKey);
+      cancelAnimationFrame(raf);
+    };
+  }, [isCartOpen, closeCart]);
+
+  if (!isCartOpen) return null;
+
+  const handleQuantity = (item, quantity) => {
+    updateQuantity(item.id, quantity, item.selectedSize, item.selectedColor);
   };
 
-  const handleRemove = (id, size, color, name) => {
-    removeItem(id, size, color);
-    toast.success('Removed from bag', { message: `${name} removed from your bag` });
+  const handleRemove = (item) => {
+    removeItem(item.id, item.selectedSize, item.selectedColor);
+    toast.success('Removed from bag', { message: `${item.name} removed from your bag` });
   };
 
-  const handleCheckout = () => {
-    onClose();
-    navigate('/checkout');
-  };
+  return (
+    <div className="fixed inset-0 z-[75]">
+      <div
+        className="absolute inset-0 bg-ink/40 animate-fade-in"
+        onClick={closeCart}
+        aria-hidden="true"
+      />
 
-  const drawer = (
-    <>
-      <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
-      <div className="fixed right-0 top-0 z-50 h-full w-full max-w-sm bg-white shadow-xl flex flex-col animate-slide-in" role="dialog" aria-modal="true" aria-label="Shopping bag">
+      <aside
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Shopping bag"
+        tabIndex={-1}
+        className="absolute inset-y-0 right-0 flex w-full max-w-[26rem] flex-col bg-paper outline-none animate-slide-left"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-100">
-          <h2 className="text-lg font-medium">Shopping Bag ({itemCount})</h2>
-          <button onClick={onClose} className="p-2 text-gray-400 hover:text-black rounded-full hover:bg-gray-100 transition-colors" aria-label="Close bag">
-            <X size={22} strokeWidth={2} />
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-line px-5">
+          <h2 className="flex items-baseline gap-2 text-[0.9375rem] font-medium text-ink">
+            Your Bag
+            <span className="text-[0.8125rem] tabular-nums text-ink-40">
+              {count} {count === 1 ? 'item' : 'items'}
+            </span>
+          </h2>
+
+          <button
+            type="button"
+            onClick={closeCart}
+            aria-label="Close bag"
+            className="-mr-2 p-2 text-ink-40 transition-colors hover:text-ink"
+          >
+            <X size={20} strokeWidth={1.6} />
           </button>
         </div>
 
-        {/* Items */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {cart.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center text-gray-500 py-12">
-              <svg className="h-16 w-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5} aria-hidden="true">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-              </svg>
-              <p className="font-medium text-gray-900">Your bag is empty</p>
-              <p className="text-sm mt-1">Looks like you haven't added any items yet.</p>
-              <Link to="/shop" onClick={onClose} className="mt-4 inline-flex items-center gap-2 text-black hover:underline font-medium">
-                Continue shopping
-              </Link>
+        {cart.length === 0 ? (
+          <EmptyState
+            icon={ShoppingBag}
+            title="Your bag is empty"
+            description="Explore the collection and save the pieces you love here."
+            actionLabel="Explore Collection"
+            onAction={closeCart}
+            className="flex-1 py-16"
+          />
+        ) : (
+          <>
+            {/* Free delivery progress */}
+            <div className="shrink-0 border-b border-line bg-sand px-5 py-3">
+              <p className="text-[0.75rem] text-ink-60">
+                {qualifiesFree ? (
+                  <>
+                    <span className="font-medium text-ink">Free delivery unlocked.</span> Nice
+                    choice.
+                  </>
+                ) : (
+                  <>
+                    Add <span className="font-medium text-ink">{formatPrice(remaining)}</span> more
+                    for free delivery.
+                  </>
+                )}
+              </p>
+
+              <div className="mt-2 h-px w-full bg-line" role="presentation">
+                <div
+                  className="h-px bg-ink transition-[width] duration-500"
+                  style={{
+                    width: `${Math.min(100, (subtotal / FREE_DELIVERY_THRESHOLD) * 100)}%`,
+                  }}
+                />
+              </div>
             </div>
-          ) : (
-            cart.map((item) => (
-              <div key={`${item.id}-${item.selectedSize}-${item.selectedColor}`} className="flex gap-4">
-                <Link to={`/product/${item.slug || item.id}`} className="relative h-24 w-16 flex-shrink-0 overflow-hidden bg-gray-100 rounded-lg">
-                  <img src={item.image} alt={item.name} className="h-full w-full object-cover" />
-                </Link>
-                <div className="flex-1 min-w-0">
-                  <Link to={`/product/${item.slug || item.id}`} className="font-medium text-sm line-clamp-1 hover:underline">{item.name}</Link>
-                  <div className="mt-1 flex items-center gap-3 text-xs text-gray-500">
-                    {item.selectedColor && <span>{item.selectedColor}</span>}
-                    {item.selectedSize && <span>{item.selectedSize}</span>}
-                  </div>
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className="font-semibold text-sm">{formatPrice(item.price)}</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleUpdateQty(item.id, item.selectedSize, item.selectedColor, -1)}
-                        className="p-1.5 rounded border border-gray-200 hover:bg-gray-50 transition-colors"
-                        aria-label="Decrease quantity"
+
+            {/* Items */}
+            <ul className="min-h-0 flex-1 divide-y divide-line-soft overflow-y-auto">
+              {cart.map((item) => (
+                <li key={`${item.id}-${item.selectedSize}-${item.selectedColor}`} className="flex gap-4 px-5 py-5">
+                  <Link
+                    to={`/product/${item.slug}`}
+                    onClick={closeCart}
+                    className="size-24 shrink-0 overflow-hidden bg-sand"
+                  >
+                    <img
+                      src={item.image}
+                      alt={item.name}
+                      className="size-full object-cover"
+                      loading="lazy"
+                    />
+                  </Link>
+
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <div className="flex items-start justify-between gap-3">
+                      <Link
+                        to={`/product/${item.slug}`}
+                        onClick={closeCart}
+                        className="text-[0.875rem] leading-snug text-ink transition-colors hover:text-ink-60"
                       >
-                        <Minus size={14} strokeWidth={2} />
-                      </button>
-                      <span className="w-8 text-center text-sm">{item.quantity}</span>
+                        {item.name}
+                      </Link>
+
                       <button
-                        onClick={() => handleUpdateQty(item.id, item.selectedSize, item.selectedColor, 1)}
-                        className="p-1.5 rounded border border-gray-200 hover:bg-gray-50 transition-colors"
-                        aria-label="Increase quantity"
+                        type="button"
+                        onClick={() => handleRemove(item)}
+                        aria-label={`Remove ${item.name} from bag`}
+                        className="-mr-1 -mt-1 shrink-0 p-1 text-ink-25 transition-colors hover:text-error"
                       >
-                        <Plus size={14} strokeWidth={2} />
+                        <Trash2 size={15} strokeWidth={1.75} />
                       </button>
                     </div>
+
+                    {(item.selectedSize || item.selectedColor) && (
+                      <p className="mt-1 text-[0.75rem] text-ink-40">
+                        {[item.selectedSize, item.selectedColor].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+
+                    <div className="mt-auto flex items-center justify-between gap-3 pt-3">
+                      <QuantityStepper item={item} onChange={(quantity) => handleQuantity(item, quantity)} />
+                      <span className="text-[0.875rem] tabular-nums text-ink">
+                        {formatPrice(item.price * item.quantity)}
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <button
-                  onClick={() => handleRemove(item.id, item.selectedSize, item.selectedColor, item.name)}
-                  className="p-2 text-gray-400 hover:text-red-500 transition-colors"
-                  aria-label={`Remove ${item.name}`}
-                >
-                  <Trash2 size={18} strokeWidth={1.7} />
-                </button>
+                </li>
+              ))}
+            </ul>
+
+            {/* Summary */}
+            <div className="shrink-0 border-t border-line px-5 py-5">
+              <dl className="flex items-baseline justify-between">
+                <dt className="text-[0.8125rem] text-ink-60">Subtotal</dt>
+                <dd className="text-[1.0625rem] tabular-nums text-ink">
+                  {formatPrice(subtotal)}
+                </dd>
+              </dl>
+
+              <p className="mt-1.5 text-[0.75rem] text-ink-40">
+                Delivery and taxes calculated at checkout.
+              </p>
+
+              <div className="mt-5 flex flex-col gap-2">
+                <Link to="/checkout" onClick={closeCart} className="block">
+                  <Button size="lg" fullWidth iconRight={<ArrowRight size={15} strokeWidth={2} />}>
+                    Checkout
+                  </Button>
+                </Link>
+
+                <Link to="/cart" onClick={closeCart} className="block">
+                  <Button size="lg" fullWidth variant="secondary">
+                    View Bag
+                  </Button>
+                </Link>
               </div>
-            ))
-          )}
-        </div>
-
-        {/* Summary */}
-        {cart.length > 0 && (
-          <div className="border-t border-gray-100 p-4 space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Subtotal</span>
-              <span className="font-medium">{formatPrice(subtotal)}</span>
             </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Delivery</span>
-              <span className="font-medium">Calculated at checkout</span>
-            </div>
-            <div className="flex justify-between text-base font-semibold pt-2 border-t border-gray-100">
-              <span>Total</span>
-              <span>{formatPrice(subtotal)}</span>
-            </div>
-
-            <button onClick={handleCheckout} className="w-full h-12 bg-black text-white font-medium rounded-md hover:bg-gray-800 transition-colors">
-              Checkout
-            </button>
-            <Link to="/cart" onClick={onClose} className="block text-center text-sm font-medium text-gray-600 hover:text-black">
-              View and edit bag
-            </Link>
-          </div>
+          </>
         )}
-      </div>
-    </>
+      </aside>
+    </div>
   );
-
-  return createPortal(drawer, document.body);
-}
-
-export default function CartDrawer({ isOpen, onClose }) {
-  return <CartDrawerContent isOpen={isOpen} onClose={onClose} />;
 }

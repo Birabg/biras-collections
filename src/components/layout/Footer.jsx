@@ -1,169 +1,174 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Mail } from 'lucide-react';
+import { ArrowRight, Check, Mail } from 'lucide-react';
 
-// Simple SVG social icons
-const InstagramIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-5 w-5" aria-hidden="true">
-    <rect x="2" y="2" width="20" height="20" rx="5" ry="5" />
-    <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z" />
-    <circle cx="17.5" cy="6.5" r="1" />
-  </svg>
-);
-
-const TwitterIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-5 w-5" aria-hidden="true">
-    <path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z" />
-  </svg>
-);
-
-const FacebookIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-5 w-5" aria-hidden="true">
-    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" />
-  </svg>
-);
-
-const footerLinks = {
-  shop: [
-    { label: 'Women', href: '/shop?category=women' },
-    { label: 'Men', href: '/shop?category=men' },
-    { label: 'Accessories', href: '/shop?category=accessories' },
-    { label: 'New Arrivals', href: '/shop?new=true' },
-  ],
-  help: [
-    { label: 'Contact', href: '/contact' },
-    { label: 'Shipping', href: '/shipping' },
-    { label: 'Returns', href: '/returns' },
-    { label: 'FAQ', href: '/faq' },
-  ],
-  company: [
-    { label: 'About', href: '/about' },
-    { label: 'Our Story', href: '/our-story' },
-    { label: 'Privacy Policy', href: '/privacy' },
-    { label: 'Terms', href: '/terms' },
-  ],
-};
-
-const socialLinks = [
-  { label: 'Instagram', href: 'https://instagram.com', icon: InstagramIcon },
-  { label: 'Twitter', href: 'https://twitter.com', icon: TwitterIcon },
-  { label: 'Facebook', href: 'https://facebook.com', icon: FacebookIcon },
+const SHOP_LINKS = [
+  { label: 'Women', to: '/shop?category=women' },
+  { label: 'Men', to: '/shop?category=men' },
+  { label: 'Accessories', to: '/shop?category=accessories' },
+  { label: 'New Arrivals', to: '/shop?new=true' },
+  { label: 'All products', to: '/shop' },
 ];
+
+const HELP_LINKS = [
+  { label: 'Contact', to: '/contact' },
+  { label: 'Shipping', to: '/shipping' },
+  { label: 'Returns', to: '/returns' },
+  { label: 'FAQ', to: '/faq' },
+];
+
+const COMPANY_LINKS = [
+  { label: 'Our story', to: '/about' },
+  { label: 'Sustainability', to: '/about' },
+  { label: 'Privacy policy', to: '/privacy' },
+  { label: 'Terms of service', to: '/terms' },
+];
+
+const PAYMENT_LABELS = ['Telebirr', 'CBE Birr', 'Chapa', 'Bank transfer', 'Cash on delivery'];
+
+function LinkColumn({ title, links }) {
+  return (
+    <div>
+      <h3 className="t-eyebrow text-paper/40">{title}</h3>
+      <ul className="mt-5 flex flex-col gap-3">
+        {links.map((link) => (
+          <li key={link.label}>
+            <Link
+              to={link.to}
+              className="link-underline text-[0.8125rem] text-paper/80 transition-colors duration-200 hover:text-paper"
+            >
+              {link.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Newsletter.
+ * There is no mailing-list API, so the form validates the address and then
+ * states plainly that nothing was submitted rather than faking a subscription.
+ */
+function NewsletterForm() {
+  const [email, setEmail] = useState('');
+  const [state, setState] = useState('idle'); // idle | invalid | done
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+    if (!valid) {
+      setState('invalid');
+      return;
+    }
+
+    // No endpoint exists. Be honest instead of showing a false confirmation.
+    setState('done');
+    setEmail('');
+  };
+
+  return (
+    <div className="max-w-sm">
+      <h3 className="t-eyebrow text-paper/40">Newsletter</h3>
+      <p className="mt-5 text-[0.875rem] leading-relaxed text-paper/70">
+        New collections, restocks and private sales — a few times a month at most.
+      </p>
+
+      {state === 'done' ? (
+        <div
+          className="mt-6 flex items-start gap-3 border border-paper/20 bg-paper/5 px-4 py-3"
+          role="status"
+        >
+          <Check size={15} strokeWidth={2} className="mt-0.5 shrink-0 text-paper" aria-hidden="true" />
+          <p className="text-[0.8125rem] leading-relaxed text-paper/80">
+            <span className="font-medium text-paper">Address accepted.</span> Our mailing list is
+            not connected yet, so nothing was stored. Check back once the service is live.
+          </p>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} noValidate className="mt-6">
+          <label htmlFor="footer-email" className="sr-only">
+            Email address
+          </label>
+          <div className="flex items-stretch border-b border-paper/30 focus-within:border-paper">
+            <span className="flex items-center pr-3 text-paper/40" aria-hidden="true">
+              <Mail size={15} strokeWidth={1.75} />
+            </span>
+            <input
+              id="footer-email"
+              type="email"
+              value={email}
+              onChange={(event) => {
+                setEmail(event.target.value);
+                if (state === 'invalid') setState('idle');
+              }}
+              placeholder="Email address"
+              aria-invalid={state === 'invalid' ? 'true' : undefined}
+              aria-describedby={state === 'invalid' ? 'footer-email-error' : undefined}
+              className="h-11 min-w-0 flex-1 bg-transparent text-[0.875rem] text-paper outline-none placeholder:text-paper/35"
+            />
+            <button
+              type="submit"
+              className="flex h-11 shrink-0 items-center gap-2 pl-4 text-[0.6875rem] font-medium uppercase tracking-[0.14em] text-paper transition-opacity hover:opacity-70"
+            >
+              Join
+              <ArrowRight size={14} strokeWidth={2} aria-hidden="true" />
+            </button>
+          </div>
+
+          {state === 'invalid' && (
+            <p id="footer-email-error" role="alert" className="mt-2 text-[0.8125rem] text-paper">
+              Enter a valid email address.
+            </p>
+          )}
+        </form>
+      )}
+    </div>
+  );
+}
 
 export default function Footer() {
   return (
-    <footer className="bg-black text-white" role="contentinfo">
-      <div className="mx-auto max-w-7xl px-5 py-14 lg:px-8 lg:py-20">
-        <div className="grid gap-12 md:grid-cols-2 lg:grid-cols-5">
+    <footer className="bg-ink text-paper" role="contentinfo">
+      <div className="mx-auto max-w-[90rem] px-5 py-16 lg:px-12 lg:py-20">
+        <div className="grid gap-12 lg:grid-cols-[1.4fr_1fr_1fr_1fr] lg:gap-8">
           {/* Brand */}
-          <div className="lg:col-span-2 xl:col-span-2">
-            <Link to="/" className="text-xl font-semibold tracking-tight" aria-label="Bira's Collections Home">
-              Bira's <span className="font-normal">Collections</span>
-            </Link>
-            <p className="mt-4 max-w-sm text-sm leading-6 text-white/50">
-              Modern fashion, carefully selected for your everyday style.
+          <div>
+            <p className="font-display text-2xl leading-tight">
+              Bira&rsquo;s <span className="italic">Collections</span>
+            </p>
+            <p className="mt-5 max-w-xs text-[0.875rem] leading-relaxed text-paper/70">
+              Considered womenswear, menswear and accessories, made in small runs and delivered across
+              Ethiopia.
             </p>
 
-            {/* Newsletter in footer */}
-            <div className="mt-8 max-w-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60 mb-3">
-                Join our community
-              </p>
-              <form className="flex gap-2" onSubmit={(e) => e.preventDefault()}>
-                <label htmlFor="footer-email" className="sr-only">Email address</label>
-                <input
-                  id="footer-email"
-                  type="email"
-                  placeholder="Your email"
-                  className="flex-1 h-11 px-4 text-sm bg-white/5 border border-white/10 rounded-md text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white focus:border-transparent"
-                  aria-label="Email address for newsletter"
-                />
-                <button
-                  type="submit"
-                  className="h-11 px-5 bg-white text-black text-sm font-medium rounded-md hover:bg-gray-200 transition-colors"
-                >
-                  Subscribe
-                </button>
-              </form>
-              <p className="mt-3 text-xs text-white/40">Unsubscribe anytime. <a href="/privacy" className="underline hover:text-white">Privacy Policy</a></p>
+            <div className="mt-8">
+              <NewsletterForm />
             </div>
           </div>
 
-          {/* Shop */}
-          <nav aria-labelledby="shop-heading">
-            <h3 id="shop-heading" className="text-sm font-semibold uppercase tracking-[0.1em] mb-5">
-              Shop
-            </h3>
-            <ul className="flex flex-col gap-3 text-sm text-white/50">
-              {footerLinks.shop.map((link) => (
-                <li key={link.label}>
-                  <Link to={link.href} className="hover:text-white transition-colors">
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-
-          {/* Help */}
-          <nav aria-labelledby="help-heading">
-            <h3 id="help-heading" className="text-sm font-semibold uppercase tracking-[0.1em] mb-5">
-              Help
-            </h3>
-            <ul className="flex flex-col gap-3 text-sm text-white/50">
-              {footerLinks.help.map((link) => (
-                <li key={link.label}>
-                  <Link to={link.href} className="hover:text-white transition-colors">
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-
-          {/* Company */}
-          <nav aria-labelledby="company-heading">
-            <h3 id="company-heading" className="text-sm font-semibold uppercase tracking-[0.1em] mb-5">
-              Company
-            </h3>
-            <ul className="flex flex-col gap-3 text-sm text-white/50">
-              {footerLinks.company.map((link) => (
-                <li key={link.label}>
-                  <Link to={link.href} className="hover:text-white transition-colors">
-                    {link.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
+          <LinkColumn title="Shop" links={SHOP_LINKS} />
+          <LinkColumn title="Help" links={HELP_LINKS} />
+          <LinkColumn title="Company" links={COMPANY_LINKS} />
         </div>
 
-        {/* Social & Copyright */}
-        <div className="mt-12 border-t border-white/10 pt-6">
-          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-5">
-              {socialLinks.map((social) => (
-                <a
-                  key={social.label}
-                  href={social.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-white/40 hover:text-white transition-colors"
-                  aria-label={social.label}
-                >
-                  <social.icon size={20} strokeWidth={1.5} aria-hidden="true" />
-                </a>
-              ))}
-            </div>
-
-            <p className="text-xs text-white/40 text-center md:text-left">
-              © {new Date().getFullYear()} Bira's Collections. All rights reserved.
+        {/* Bottom bar */}
+        <div className="mt-16 border-t border-paper/15 pt-8">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+            <p className="t-caption text-paper/45">
+              &copy; 2026 Bira&rsquo;s Collections. All rights reserved.
             </p>
 
-            <div className="flex items-center gap-5 text-sm text-white/50">
-              <Link to="/shipping" className="hover:text-white transition-colors">Shipping</Link>
-              <Link to="/returns" className="hover:text-white transition-colors">Returns</Link>
-              <Link to="/faq" className="hover:text-white transition-colors">FAQ</Link>
-              <Link to="/contact" className="hover:text-white transition-colors">Contact</Link>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-8">
+              <ul className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Accepted payment methods">
+                {PAYMENT_LABELS.map((label) => (
+                  <li key={label} className="t-caption text-paper/40">
+                    {label}
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
         </div>

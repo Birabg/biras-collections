@@ -1,218 +1,253 @@
+import { useEffect, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Package, Heart, User, LogOut, ChevronRight, CreditCard, MapPin } from 'lucide-react';
+import { Package, ChevronRight, Heart, User, MapPin, LogOut, ShieldCheck } from 'lucide-react';
 import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
+import { useAuth } from '../auth/AuthContext';
+import { useWishlist } from '../context/WishlistContext';
 import { useToast } from '../components/ui/Toast';
+import { PERMISSIONS, roleLabel as labelForRole } from '../auth/roles';
+import {
+  fetchOrders,
+  STATUS_META,
+  STATUS_TONE_CLASS,
+  formatOrderDate,
+  orderItemCount,
+} from '../data/customerOrders';
+import { formatPrice } from '../utils/currency';
 
-const accountSections = [
-  {
-    title: 'My Orders',
-    items: [
-      { label: 'Orders', href: '/account/orders', icon: Package },
-      { label: 'Returns', href: '/returns', icon: RotateCcw },
-    ],
-  },
-  {
-    title: 'Account Settings',
-    items: [
-      { label: 'Profile', href: '/account/profile', icon: User },
-      { label: 'Addresses', href: '/account/addresses', icon: MapPin },
-      { label: 'Payment Methods', href: '/account/payment', icon: CreditCard },
-    ],
-  },
-  {
-    title: 'Preferences',
-    items: [
-      { label: 'Wishlist', href: '/wishlist', icon: Heart },
-      { label: 'Newsletter', href: '/account/newsletter', icon: Mail },
-    ],
-  },
+const SHORTCUTS = [
+  { title: 'Orders', description: 'Track, return or reorder', to: '/account/orders', icon: Package, permission: PERMISSIONS.ORDERS_OWN_READ },
+  { title: 'Wishlist', description: 'Pieces you have saved', to: '/wishlist', icon: Heart, permission: PERMISSIONS.WISHLIST_MANAGE },
+  { title: 'Profile', description: 'Your name and contact details', to: '/account/profile', icon: User, permission: PERMISSIONS.PROFILE_READ },
+  { title: 'Addresses', description: 'Where we deliver', to: '/account/addresses', icon: MapPin, permission: PERMISSIONS.ADDRESSES_MANAGE },
 ];
 
-// Need to import RotateCcw and Mail
-import { RotateCcw, Mail } from 'lucide-react';
-
 export default function Account() {
-  const navigate = useNavigate();
+  const { user, role, logout, can, isDemoBackend } = useAuth();
+  const { wishlist } = useWishlist();
   const toast = useToast();
+  const navigate = useNavigate();
 
-  const handleLogout = () => {
-    // In a real app, this would call an auth logout API
-    toast.success('Logged out', { message: 'You have been logged out successfully' });
-    navigate('/login');
-  };
+  const [orders, setOrders] = useState([]);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isSignOutOpen, setIsSignOutOpen] = useState(false);
 
-  // Mock user data
-  const user = {
-    name: 'Bira User',
-    email: 'bira@example.com',
-    avatar: null,
+  useEffect(() => {
+    let cancelled = false;
+    fetchOrders().then((result) => {
+      if (!cancelled) setOrders(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const recentOrders = useMemo(() => orders.slice(0, 3), [orders]);
+  const firstName = user?.name?.split(' ')[0] ?? 'there';
+  const initials = (user?.name ?? 'B')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
+
+  const handleSignOut = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      setIsSignOutOpen(false);
+      toast.success('Signed out', { message: 'Your session on this device has ended.' });
+      navigate('/');
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-100 bg-white">
-        <div className="mx-auto max-w-7xl px-5 py-6 lg:px-8">
-          <h1 className="text-3xl font-medium tracking-tight">My Account</h1>
+    <>
+      <header className="border-b border-line">
+        <div className="shell py-10 lg:py-14">
+          <p className="t-eyebrow text-ink-40">Your account</p>
+          <h1 className="t-page mt-3">
+            Welcome back, {firstName}
+          </h1>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-        <div className="grid gap-8 lg:grid-cols-4">
-          {/* Sidebar */}
-          <aside className="lg:col-span-1">
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-6">
-              {/* User Info */}
-              <div className="flex items-center gap-4">
-                <div className="h-16 w-16 rounded-full bg-gray-100 flex items-center justify-center text-2xl font-medium text-gray-500">
-                  {user.name.charAt(0)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="font-medium text-gray-900 truncate">{user.name}</h2>
-                  <p className="text-sm text-gray-500 truncate">{user.email}</p>
-                </div>
+      <div className="shell py-10 lg:py-14">
+        <div className="grid gap-10 lg:grid-cols-[18rem_minmax(0,1fr)] lg:gap-16">
+          {/* Identity + sign out */}
+          <aside className="lg:sticky lg:top-28 lg:self-start">
+            <div className="flex items-center gap-4 border-b border-line pb-6">
+              <span
+                className="flex size-14 shrink-0 items-center justify-center rounded-full bg-ink text-[1.0625rem] font-medium text-paper"
+                aria-hidden="true"
+              >
+                {initials || 'B'}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-[0.9375rem] font-medium text-ink">{user?.name}</p>
+                <p className="truncate text-[0.8125rem] text-ink-40">{user?.email}</p>
+                <p className="t-eyebrow mt-1.5 text-ink-25">{labelForRole(role)}</p>
               </div>
+            </div>
 
-              <div className="pt-4 border-t border-gray-100 space-y-2">
-                {accountSections.flatMap((section) =>
-                  section.items.map((item) => (
-                    <Link
-                      key={item.label}
-                      to={item.href}
-                      className="flex items-center gap-3 px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-50 rounded-lg transition-colors group"
-                    >
-                      <item.icon size={18} strokeWidth={1.7} className="text-gray-400 group-hover:text-gray-600" />
-                      {item.label}
-                      <ChevronRight size={14} className="ml-auto text-gray-300 group-hover:text-gray-500" />
-                    </Link>
-                  ))
+            {isDemoBackend && (
+              <p className="mt-6 flex items-start gap-2.5 border border-line bg-sand px-4 py-3 text-[0.75rem] leading-relaxed text-ink-60">
+                <ShieldCheck size={14} strokeWidth={1.6} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <span>
+                  This account lives in your browser only. Clearing site data removes it.
+                </span>
+              </p>
+            )}
+
+            <Button
+              variant="tertiary"
+              size="sm"
+              className="mt-6"
+              onClick={() => setIsSignOutOpen(true)}
+              iconLeft={<LogOut size={14} strokeWidth={1.75} aria-hidden="true" />}
+            >
+              Sign out
+            </Button>
+          </aside>
+
+          <div className="min-w-0">
+            {/* Shortcuts */}
+            <ul className="grid gap-px border border-line bg-line sm:grid-cols-2">
+              {SHORTCUTS.filter((item) => can(item.permission)).map((item) => (
+                <li key={item.to} className="bg-paper">
+                  <Link
+                    to={item.to}
+                    className="group flex items-start gap-4 p-6 transition-colors hover:bg-sand"
+                  >
+                    <item.icon
+                      size={20}
+                      strokeWidth={1.4}
+                      className="mt-0.5 shrink-0 text-ink-40 transition-colors group-hover:text-ink"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-[0.9375rem] font-medium text-ink">
+                        {item.title}
+                      </span>
+                      <span className="mt-1 block text-[0.8125rem] text-ink-40">
+                        {item.description}
+                      </span>
+                    </span>
+                    <ChevronRight
+                      size={15}
+                      strokeWidth={1.75}
+                      className="ml-auto mt-1 shrink-0 text-ink-25 transition-[color,transform] group-hover:translate-x-0.5 group-hover:text-ink"
+                      aria-hidden="true"
+                    />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+
+            {/* At a glance */}
+            <dl className="mt-10 grid grid-cols-2 gap-px border border-line bg-line sm:grid-cols-3">
+              <div className="bg-paper p-5">
+                <dt className="t-eyebrow text-ink-40">Orders</dt>
+                <dd className="mt-2 text-xl tabular-nums text-ink">{orders.length}</dd>
+              </div>
+              <div className="bg-paper p-5">
+                <dt className="t-eyebrow text-ink-40">Saved</dt>
+                <dd className="mt-2 text-xl tabular-nums text-ink">{wishlist.length}</dd>
+              </div>
+              <div className="bg-paper p-5">
+                <dt className="t-eyebrow text-ink-40">Member since</dt>
+                <dd className="mt-2 text-[0.9375rem] text-ink">
+                  {user?.createdAt ? formatOrderDate(user.createdAt) : 'Today'}
+                </dd>
+              </div>
+            </dl>
+
+            {/* Recent orders */}
+            <section className="mt-10" aria-labelledby="recent-orders-heading">
+              <div className="flex flex-wrap items-end justify-between gap-4">
+                <h2 id="recent-orders-heading" className="t-section !text-xl">
+                  Recent orders
+                </h2>
+                {orders.length > 0 && (
+                  <Link
+                    to="/account/orders"
+                    className="link-underline inline-flex items-center gap-1.5 text-[0.8125rem] text-ink"
+                  >
+                    View all
+                    <ChevronRight size={14} strokeWidth={2} aria-hidden="true" />
+                  </Link>
                 )}
               </div>
 
-              <div className="pt-4 border-t border-gray-100">
-                <Button variant="ghost" fullWidth onClick={handleLogout} className="text-red-600 hover:bg-red-50 justify-start">
-                  <LogOut size={18} strokeWidth={1.7} />
-                  Sign out
-                </Button>
-              </div>
-            </div>
-          </aside>
+              {recentOrders.length === 0 ? (
+                <p className="t-body mt-4 border border-line px-5 py-6">
+                  No orders yet. Anything you place will appear here.
+                </p>
+              ) : (
+                <ul className="mt-4 flex flex-col divide-y divide-line border-y border-line">
+                  {recentOrders.map((order) => {
+                    const meta = STATUS_META[order.status];
 
-          {/* Content */}
-          <div className="lg:col-span-3">
-            <div className="bg-white rounded-xl border border-gray-100 p-6 lg:p-8">
-              <div className="mb-6">
-                <h2 className="text-2xl font-medium">Welcome back, {user.name.split(' ')[0]}!</h2>
-                <p className="mt-1 text-gray-500">Manage your account, track orders, and update your preferences.</p>
-              </div>
+                    return (
+                      <li key={order.id}>
+                        <Link
+                          to={`/account/orders/${order.id}`}
+                          className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-4 transition-colors hover:bg-sand"
+                        >
+                          <span className="flex items-baseline gap-3">
+                            <span className="text-[0.875rem] font-medium text-ink">{order.id}</span>
+                            <span className="text-[0.8125rem] text-ink-40">
+                              {formatOrderDate(order.placedAt)}
+                            </span>
+                          </span>
 
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {/* Quick Actions */}
-                <Link to="/account/orders" className="p-6 border border-gray-100 rounded-xl hover:border-gray-200 hover:bg-gray-50 transition-colors group">
-                  <div className="h-12 w-12 rounded-lg bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-gray-200 transition-colors">
-                    <Package size={24} strokeWidth={1.7} className="text-gray-600 group-hover:text-black" />
-                  </div>
-                  <h3 className="font-medium text-gray-900 mb-1">My Orders</h3>
-                  <p className="text-sm text-gray-500">Track, return, or reorder items</p>
-                </Link>
-
-                <Link to="/wishlist" className="p-6 border border-gray-100 rounded-xl hover:border-gray-200 hover:bg-gray-50 transition-colors group">
-                  <div className="h-12 w-12 rounded-lg bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-gray-200 transition-colors">
-                    <Heart size={24} strokeWidth={1.7} className="text-gray-600 group-hover:text-red-500" />
-                  </div>
-                  <h3 className="font-medium text-gray-900 mb-1">Wishlist</h3>
-                  <p className="text-sm text-gray-500">View your saved items</p>
-                </Link>
-
-                <Link to="/account/profile" className="p-6 border border-gray-100 rounded-xl hover:border-gray-200 hover:bg-gray-50 transition-colors group">
-                  <div className="h-12 w-12 rounded-lg bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-gray-200 transition-colors">
-                    <User size={24} strokeWidth={1.7} className="text-gray-600 group-hover:text-black" />
-                  </div>
-                  <h3 className="font-medium text-gray-900 mb-1">Profile</h3>
-                  <p className="text-sm text-gray-500">Update your personal information</p>
-                </Link>
-
-                <Link to="/account/addresses" className="p-6 border border-gray-100 rounded-xl hover:border-gray-200 hover:bg-gray-50 transition-colors group">
-                  <div className="h-12 w-12 rounded-lg bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-gray-200 transition-colors">
-                    <MapPin size={24} strokeWidth={1.7} className="text-gray-600 group-hover:text-black" />
-                  </div>
-                  <h3 className="font-medium text-gray-900 mb-1">Addresses</h3>
-                  <p className="text-sm text-gray-500">Manage shipping addresses</p>
-                </Link>
-
-                <Link to="/account/payment" className="p-6 border border-gray-100 rounded-xl hover:border-gray-200 hover:bg-gray-50 transition-colors group">
-                  <div className="h-12 w-12 rounded-lg bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-gray-200 transition-colors">
-                    <CreditCard size={24} strokeWidth={1.7} className="text-gray-600 group-hover:text-black" />
-                  </div>
-                  <h3 className="font-medium text-gray-900 mb-1">Payment Methods</h3>
-                  <p className="text-sm text-gray-500">Manage saved payment methods</p>
-                </Link>
-
-                <Link to="/shop" className="p-6 border border-gray-100 rounded-xl hover:border-gray-200 hover:bg-gray-50 transition-colors group">
-                  <div className="h-12 w-12 rounded-lg bg-gray-100 flex items-center justify-center mb-4 group-hover:bg-gray-200 transition-colors">
-                    <svg className="h-6 w-6 text-gray-600 group-hover:text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.7}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                    </svg>
-                  </div>
-                  <h3 className="font-medium text-gray-900 mb-1">Continue Shopping</h3>
-                  <p className="text-sm text-gray-500">Browse our latest collection</p>
-                </Link>
-              </div>
-
-              {/* Recent Orders */}
-              <div className="mt-8">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-medium">Recent Orders</h3>
-                  <Link to="/account/orders" className="text-sm font-medium text-gray-600 hover:text-black flex items-center gap-1">
-                    View all
-                    <ChevronRight size={14} />
-                  </Link>
-                </div>
-                <div className="border border-gray-100 rounded-xl overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-100">
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">Order</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">Status</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">Total</th>
-                        <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-[0.1em] text-gray-500">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-4 py-4">
-                          <Link to="/account/orders/ORD-2026-001" className="font-medium text-gray-900 hover:underline">ORD-2026-001</Link>
-                        </td>
-                        <td className="px-4 py-4 text-gray-500">Sep 15, 2026</td>
-                        <td className="px-4 py-4">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-700">Delivered</span>
-                        </td>
-                        <td className="px-4 py-4 text-right font-medium">4,800 ETB</td>
-                        <td className="px-4 py-4 text-right">
-                          <Link to="/account/orders/ORD-2026-001" className="text-sm font-medium text-gray-600 hover:text-black">View</Link>
-                        </td>
-                      </tr>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-4 py-4">
-                          <Link to="/account/orders/ORD-2026-002" className="font-medium text-gray-900 hover:underline">ORD-2026-002</Link>
-                        </td>
-                        <td className="px-4 py-4 text-gray-500">Sep 20, 2026</td>
-                        <td className="px-4 py-4">
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">Processing</span>
-                        </td>
-                        <td className="px-4 py-4 text-right font-medium">2,950 ETB</td>
-                        <td className="px-4 py-4 text-right">
-                          <Link to="/account/orders/ORD-2026-002" className="text-sm font-medium text-gray-600 hover:text-black">View</Link>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+                          <span className="flex items-center gap-4">
+                            <span
+                              className={`px-2.5 py-1 text-[0.6875rem] font-medium uppercase tracking-[0.1em] ${STATUS_TONE_CLASS[meta.tone]}`}
+                            >
+                              {meta.label}
+                            </span>
+                            <span className="text-[0.875rem] tabular-nums text-ink">
+                              {formatPrice(order.total)}
+                            </span>
+                            <span className="t-caption hidden sm:inline">
+                              {orderItemCount(order)}{' '}
+                              {orderItemCount(order) === 1 ? 'item' : 'items'}
+                            </span>
+                          </span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+
+      <Modal
+        isOpen={isSignOutOpen}
+        onClose={() => setIsSignOutOpen(false)}
+        title="Sign out?"
+      >
+        <p className="t-body">
+          Your bag and wishlist stay on this device. You will need to sign in again to see
+          your account.
+        </p>
+
+        <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={() => setIsSignOutOpen(false)}>
+            Stay signed in
+          </Button>
+          <Button loading={isLoggingOut} onClick={handleSignOut}>
+            Sign out
+          </Button>
+        </div>
+      </Modal>
+    </>
   );
 }

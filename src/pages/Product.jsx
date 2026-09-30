@@ -1,383 +1,595 @@
-import { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Heart, ShoppingBag, Minus, Plus, Share2, Truck, RotateCcw, Shield, Star } from 'lucide-react';
+import { useState, useCallback } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import {
+  ChevronRight,
+  ChevronLeft,
+  Heart,
+  ShoppingBag,
+  Minus,
+  Plus,
+  Share2,
+  Star,
+  Check,
+  Truck,
+  RotateCcw,
+  ShieldCheck,
+} from 'lucide-react';
 import { getProductBySlug, getRelatedProducts } from '../data/products';
 import { formatPrice } from '../utils/currency';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useToast } from '../components/ui/Toast';
-import { ProductGridSkeleton } from '../components/ui/LoadingState';
 import ProductCard from '../components/product/ProductCard';
+import ProductGrid from '../components/product/ProductGrid';
+import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
 
-export default function Product() {
-  const { slug } = useParams();
-  const product = getProductBySlug(slug);
-  const relatedProducts = getRelatedProducts(product?.id, product?.category);
+const DELIVERY_NOTES = [
+  { icon: Truck, title: 'Free over 5,000 ETB', body: '150 ETB flat below that' },
+  { icon: RotateCcw, title: '14-day returns', body: 'Tags on, unworn' },
+  { icon: ShieldCheck, title: 'Secure payment', body: 'Telebirr, Birr, CBE' },
+];
 
-  const [selectedImage, setSelectedImage] = useState(0);
-  const [selectedSize, setSelectedSize] = useState(null);
-  const [selectedColor, setSelectedColor] = useState(0);
-  const [quantity, setQuantity] = useState(1);
-  const [isAdding, setIsAdding] = useState(false);
+/* ------------------------------------------------------------------ gallery */
 
-  const { addItem: addToCart } = useCart();
-  const { toggleItem, isInWishlist } = useWishlist();
-  const toast = useToast();
-
-  const images = product?.images || [product?.image].filter(Boolean);
-  const currentColor = product?.colors?.[selectedColor];
-
-  useEffect(() => {
-    if (product?.sizes?.length && !selectedSize) {
-      setSelectedSize(product.sizes[0]);
-    }
-  }, [product, selectedSize]);
-
-  const handleAddToCart = () => {
-    if (!product) return;
-    if (product.sizes?.length && !selectedSize) {
-      toast.error('Select a size', { message: 'Please select a size before adding to bag' });
-      return;
-    }
-    setIsAdding(true);
-    addToCart(product, quantity, selectedSize, currentColor?.name);
-    toast.success('Added to bag', { message: `${product.name} added to your bag` });
-    setIsAdding(false);
+function Gallery({ images, name, selectedIndex, onSelect }) {
+  const step = (delta) => {
+    const next = (selectedIndex + delta + images.length) % images.length;
+    onSelect(next);
   };
 
-  const handleToggleWishlist = () => {
-    if (!product) return;
-    toggleItem(product);
-    const nowInWishlist = isInWishlist(product.id);
-    toast.success(
-      nowInWishlist ? 'Added to wishlist' : 'Removed from wishlist',
-      { message: nowInWishlist ? `${product.name} added to your wishlist` : `${product.name} removed from your wishlist` }
-    );
-  };
-
-  if (!product) {
+  if (images.length === 1) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-5">
-        <div className="text-center">
-          <h1 className="text-2xl font-medium">Product not found</h1>
-          <p className="mt-2 text-gray-500">The product you're looking for doesn't exist.</p>
-          <Link to="/shop" className="mt-4 inline-flex items-center gap-2 text-black hover:underline">
-            Continue shopping <ChevronRight size={16} />
-          </Link>
-        </div>
+      <div className="aspect-[3/4] overflow-hidden bg-sand">
+        <img
+          src={images[0]}
+          alt={name}
+          fetchPriority="high"
+          decoding="async"
+          className="size-full object-cover"
+        />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Breadcrumb */}
-      <nav className="border-b border-gray-100 bg-gray-50" aria-label="Breadcrumb">
-        <div className="mx-auto max-w-7xl px-5 py-4 lg:px-8">
-          <ol className="flex items-center gap-2 text-sm text-gray-500">
-            <li><Link to="/" className="hover:text-black">Home</Link></li>
-            <li><ChevronRight size={14} aria-hidden="true" /></li>
-            <li><Link to="/shop" className="hover:text-black">Shop</Link></li>
-            <li><ChevronRight size={14} aria-hidden="true" /></li>
-            <li><Link to={`/shop?category=${product.category}`} className="hover:text-black capitalize">{product.category}</Link></li>
-            <li><ChevronRight size={14} aria-hidden="true" /></li>
-            <li aria-current="page" className="text-gray-900 truncate max-w-xs">{product.name}</li>
-          </ol>
+    // Thumbnails are a vertical rail on desktop, a horizontal scroller on mobile.
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-[5rem_minmax(0,1fr)] md:gap-4">
+      <div
+        className="order-2 flex gap-3 overflow-x-auto md:order-1 md:flex-col md:overflow-visible"
+        role="group"
+        aria-label="Product images"
+      >
+        {images.map((src, index) => (
+          <button
+            key={src}
+            type="button"
+            onClick={() => onSelect(index)}
+            aria-label={`View image ${index + 1} of ${images.length}`}
+            aria-current={selectedIndex === index ? 'true' : undefined}
+            className={`relative aspect-[3/4] w-20 shrink-0 overflow-hidden border transition-colors md:w-full ${
+              selectedIndex === index ? 'border-ink' : 'border-transparent hover:border-line'
+            }`}
+          >
+            <img src={src} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
+          </button>
+        ))}
+      </div>
+
+      <div className="order-1 md:order-2">
+        <div className="relative aspect-[3/4] overflow-hidden bg-sand">
+          <img
+            src={images[selectedIndex]}
+            alt={`${name} — view ${selectedIndex + 1} of ${images.length}`}
+            fetchPriority={selectedIndex === 0 ? 'high' : 'auto'}
+            decoding="async"
+            className="size-full object-cover"
+          />
+
+          <span
+            className="pointer-events-none absolute right-3 top-3 bg-paper/95 px-2.5 py-1 text-[0.625rem] tabular-nums tracking-[0.12em] text-ink-60"
+            aria-hidden="true"
+          >
+            {selectedIndex + 1} / {images.length}
+          </span>
+
+          {/* Arrows are a touch affordance; desktop uses the thumbnail rail. */}
+          <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-2 md:hidden">
+            <button
+              type="button"
+              onClick={() => step(-1)}
+              aria-label="Previous image"
+              className="flex size-11 items-center justify-center bg-paper/90 text-ink backdrop-blur-sm"
+            >
+              <ChevronLeft size={18} strokeWidth={1.75} />
+            </button>
+            <button
+              type="button"
+              onClick={() => step(1)}
+              aria-label="Next image"
+              className="flex size-11 items-center justify-center bg-paper/90 text-ink backdrop-blur-sm"
+            >
+              <ChevronRight size={18} strokeWidth={1.75} />
+            </button>
+          </div>
         </div>
-      </nav>
+      </div>
+    </div>
+  );
+}
 
-      {/* Product Content */}
-      <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8 lg:py-12">
-        <div className="grid gap-10 lg:grid-cols-2 lg:gap-16">
-          {/* Gallery */}
-          <div className="sticky top-24 self-start">
-            <div className="relative aspect-[3/4] overflow-hidden bg-gray-100 rounded-xl">
-              <img
-                src={images[selectedImage]}
-                alt={product.name}
-                className="h-full w-full object-cover"
-              />
-            </div>
+/* --------------------------------------------------------------------- page */
 
-            {images.length > 1 && (
-              <div className="mt-4 flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-                {images.map((img, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSelectedImage(idx)}
-                    className={`flex-shrink-0 h-20 w-20 rounded-lg overflow-hidden border-2 transition-colors ${
-                      selectedImage === idx ? 'border-black' : 'border-transparent hover:border-gray-300'
-                    }`}
-                    aria-label={`View image ${idx + 1}`}
-                    aria-current={selectedImage === idx ? 'true' : 'false'}
-                  >
-                    <img src={img} alt="" className="h-full w-full object-cover" />
-                  </button>
-                ))}
-              </div>
+export default function Product() {
+  const { slug } = useParams();
+  const navigate = useNavigate();
+  const product = getProductBySlug(slug);
+
+  const [selectedImage, setSelectedImage] = useState(0);
+  const [selectedSize, setSelectedSize] = useState(null);
+  const [selectedColor, setSelectedColor] = useState(0);
+  const [quantity, setQuantity] = useState(1);
+  const [sizeError, setSizeError] = useState('');
+  const [detailsTab, setDetailsTab] = useState('description');
+
+  const { addItem } = useCart();
+  const { toggleItem, isInWishlist } = useWishlist();
+  const toast = useToast();
+
+  const needsSizeChoice = Boolean(product?.sizes?.length > 1);
+  const saved = product ? isInWishlist(product.id) : false;
+  const onSale = Boolean(product?.compareAtPrice && product.compareAtPrice > product.price);
+  const soldOut = !product || product.stock === 0;
+  const lowStock = product ? product.stock > 0 && product.stock < 5 : false;
+
+  /*
+   * Size is only forced when there is a real choice to make. A single
+   * "One Size" product should not show an error for not choosing.
+   */
+  const handleAddToCart = useCallback(() => {
+    if (!product) return;
+
+    if (needsSizeChoice && !selectedSize) {
+      setSizeError('Choose a size to continue.');
+      return;
+    }
+
+    setSizeError('');
+    const size = selectedSize ?? product.sizes?.[0] ?? null;
+    const color = product.colors?.[selectedColor]?.name ?? null;
+
+    addItem(product, quantity, size, color);
+    toast.success('Added to bag', {
+      message: `${product.name} (${size}) added to your bag`,
+    });
+  }, [product, needsSizeChoice, selectedSize, selectedColor, quantity, addItem, toast, setSizeError]);
+
+  const handleToggleWishlist = useCallback(() => {
+    if (!product) return;
+    const wasSaved = isInWishlist(product.id);
+    toggleItem(product);
+    toast.success(wasSaved ? 'Removed from wishlist' : 'Saved to wishlist', {
+      message: wasSaved
+        ? `${product.name} removed from your wishlist`
+        : `${product.name} saved to your wishlist`,
+    });
+  }, [product, isInWishlist, toggleItem, toast]);
+
+  const handleShare = useCallback(async () => {
+    if (!product) return;
+    const shareData = { title: product.name, text: product.name, url: window.location.href };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        return;
+      }
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success('Link copied', { message: 'Product link copied to your clipboard' });
+    } catch {
+      // A cancelled share sheet is not an error worth reporting.
+    }
+  }, [product, toast]);
+
+  if (!product) {
+    return (
+      <div className="shell section-y">
+        <EmptyState
+          icon={ShoppingBag}
+          title="We couldn't find that piece"
+          description="It may have sold out or moved. The rest of the collection is still here."
+          actionLabel="Browse the collection"
+          onAction={() => navigate('/shop')}
+        />
+      </div>
+    );
+  }
+
+  const images = product.images?.length ? product.images : [product.image].filter(Boolean);
+  const related = getRelatedProducts(product.id, product.category);
+  const activeColor = product.colors?.[selectedColor];
+
+  const detailTabs = [
+    { id: 'description', label: 'Description' },
+    { id: 'details', label: 'Details & care' },
+    { id: 'delivery', label: 'Delivery & returns' },
+  ];
+
+  return (
+    <>
+      <div className="shell py-5">
+        <nav aria-label="Breadcrumb">
+          <ol className="flex items-center gap-1.5 text-[0.75rem] text-ink-40">
+            <li>
+              <Link to="/" className="link-underline hover:text-ink">
+                Home
+              </Link>
+            </li>
+            <ChevronRight size={12} strokeWidth={1.5} aria-hidden="true" />
+            <li>
+              <Link to="/shop" className="link-underline hover:text-ink">
+                Shop
+              </Link>
+            </li>
+            <ChevronRight size={12} strokeWidth={1.5} aria-hidden="true" />
+            <li>
+              <Link
+                to={`/shop?category=${product.category}`}
+                className="link-underline capitalize hover:text-ink"
+              >
+                {product.category}
+              </Link>
+            </li>
+            <ChevronRight size={12} strokeWidth={1.5} aria-hidden="true" />
+            <li aria-current="page" className="truncate text-ink">
+              {product.name}
+            </li>
+          </ol>
+        </nav>
+      </div>
+
+      <div className="shell pb-16 lg:pb-24">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_26rem] lg:gap-16 xl:grid-cols-[minmax(0,1fr)_28rem] xl:gap-20">
+          <Gallery
+            images={images}
+            name={product.name}
+            selectedIndex={selectedImage}
+            onSelect={setSelectedImage}
+          />
+
+          {/* Purchase column */}
+          <div className="lg:sticky lg:top-28 lg:self-start">
+            <p className="t-eyebrow text-ink-40">{product.subcategory ?? product.category}</p>
+
+            <h1 className="t-page mt-3">{product.name}</h1>
+
+            {product.reviewCount > 0 && (
+              <p className="mt-3 flex items-center gap-1.5 text-[0.8125rem] text-ink-60">
+                <span className="flex" aria-hidden="true">
+                  {Array.from({ length: 5 }).map((_, index) => (
+                    <Star
+                      key={index}
+                      size={13}
+                      strokeWidth={1.4}
+                      className={
+                        index < Math.round(product.rating) ? 'fill-ink text-ink' : 'text-ink-25'
+                      }
+                    />
+                  ))}
+                </span>
+                <span>
+                  {product.rating} · {product.reviewCount} reviews
+                </span>
+              </p>
             )}
 
-            {/* Share & Wishlist */}
-            <div className="mt-6 flex items-center gap-4">
-              <button
-                onClick={handleToggleWishlist}
-                className={`flex items-center gap-2 px-4 py-2.5 border rounded-lg transition-colors ${
-                  isInWishlist(product.id)
-                    ? 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100'
-                    : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                }`}
-                aria-pressed={isInWishlist(product.id)}
+            <div className="mt-6 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span
+                className={`text-xl tabular-nums ${onSale ? 'text-sale' : 'text-ink'}`}
               >
-                <Heart size={18} strokeWidth={isInWishlist(product.id) ? 3 : 1.7} className={isInWishlist(product.id) ? 'fill-red-500' : ''} />
-                <span>{isInWishlist(product.id) ? 'Saved' : 'Save'}</span>
-              </button>
-
-              <button className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
-                <Share2 size={18} strokeWidth={1.7} />
-                <span>Share</span>
-              </button>
-            </div>
-
-            {/* Trust Badges */}
-            <div className="mt-8 grid grid-cols-3 gap-4 text-center">
-              <div className="p-4">
-                <Truck className="mx-auto h-6 w-6 text-gray-400 mb-2" strokeWidth={1.7} />
-                <p className="text-xs text-gray-500">Free delivery over 5,000 ETB</p>
-              </div>
-              <div className="p-4">
-                <RotateCcw className="mx-auto h-6 w-6 text-gray-400 mb-2" strokeWidth={1.7} />
-                <p className="text-xs text-gray-500">30-day returns</p>
-              </div>
-              <div className="p-4">
-                <Shield className="mx-auto h-6 w-6 text-gray-400 mb-2" strokeWidth={1.7} />
-                <p className="text-xs text-gray-500">Secure payment</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Product Info */}
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.15em] text-gray-500 capitalize">{product.category}</p>
-            <h1 className="mt-2 text-3xl font-medium tracking-tight">{product.name}</h1>
-
-            <div className="mt-4 flex items-center gap-4">
-              <div className="flex items-center gap-1">
-                <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" strokeWidth={0} />
-                <span className="font-medium">{product.rating}</span>
-                <span className="text-gray-500">({product.reviewCount} reviews)</span>
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-baseline gap-4">
-              <span className="text-2xl font-semibold">{formatPrice(product.price)}</span>
-              {product.compareAtPrice && (
-                <span className="text-xl text-gray-400 line-through">{formatPrice(product.compareAtPrice)}</span>
+                {formatPrice(product.price)}
+              </span>
+              {onSale && (
+                <>
+                  <span className="text-[0.9375rem] text-ink-25 line-through tabular-nums">
+                    {formatPrice(product.compareAtPrice)}
+                  </span>
+                  <span className="t-eyebrow text-sale">
+                    Save {formatPrice(product.compareAtPrice - product.price)}
+                  </span>
+                </>
               )}
             </div>
 
-            <p className="mt-6 text-gray-600 leading-7">{product.description}</p>
+            <p className="t-body mt-6">{product.description}</p>
 
-            {/* Color Selection */}
-            {product.colors && product.colors.length > 1 && (
+            {lowStock && (
+              <p className="t-caption mt-4 text-warning" role="status">
+                Only {product.stock} left in stock
+              </p>
+            )}
+
+            {/* Colour */}
+            {product.colors?.length > 1 && (
               <fieldset className="mt-8">
-                <legend className="text-sm font-medium mb-3">Color</legend>
-                <div className="flex gap-3">
-                  {product.colors.map((color, idx) => (
+                <legend className="t-eyebrow text-ink-40">Colour</legend>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  {product.colors.map((color, index) => (
                     <button
                       key={color.name}
-                      onClick={() => setSelectedColor(idx)}
-                      className={`relative h-10 w-10 rounded-full border-2 transition-all ${
-                        selectedColor === idx
-                          ? 'border-black ring-2 ring-black ring-offset-2'
-                          : 'border-gray-200 hover:border-gray-300'
+                      type="button"
+                      onClick={() => setSelectedColor(index)}
+                      aria-label={color.name}
+                      aria-pressed={selectedColor === index}
+                      className={`relative size-9 rounded-full border transition-all ${
+                        selectedColor === index
+                          ? 'border-ink ring-1 ring-ink ring-offset-2 ring-offset-paper'
+                          : 'border-line hover:border-ink-40'
                       }`}
                       style={{ backgroundColor: color.hex }}
-                      aria-label={color.name}
-                      aria-pressed={selectedColor === idx}
                     >
-                      {selectedColor === idx && (
-                        <span className="absolute inset-0 flex items-center justify-center text-white text-xs">
-                          ✓
+                      {selectedColor === index && (
+                        <span
+                          className="absolute inset-0 flex items-center justify-center"
+                          aria-hidden="true"
+                        >
+                          <Check
+                            size={13}
+                            strokeWidth={2.5}
+                            className={color.hex?.toLowerCase() === '#ffffff' ? 'text-ink' : 'text-paper'}
+                          />
                         </span>
                       )}
                     </button>
                   ))}
                 </div>
-                <p className="mt-2 text-sm text-gray-600">{product.colors[selectedColor]?.name}</p>
+                <p className="t-caption mt-2.5 text-ink-60">{activeColor?.name}</p>
               </fieldset>
             )}
 
-            {/* Size Selection */}
-            {product.sizes && product.sizes.length > 0 && (
-              <fieldset className="mt-8">
-                <legend className="text-sm font-medium mb-3">Size</legend>
-                <div className="flex flex-wrap gap-2">
+            {/* Size */}
+            {product.sizes?.length > 0 && (
+              <fieldset className="mt-7">
+                <legend className="t-eyebrow text-ink-40">Size</legend>
+
+                <div className="mt-3 flex flex-wrap gap-2">
                   {product.sizes.map((size) => (
                     <button
                       key={size}
-                      onClick={() => setSelectedSize(size)}
-                      className={`h-11 w-11 min-w-[44px] rounded-md border font-medium text-sm transition-colors ${
-                        selectedSize === size
-                          ? 'border-black bg-black text-white'
-                          : 'border-gray-200 text-gray-700 hover:border-gray-300'
-                      }`}
+                      type="button"
+                      onClick={() => {
+                        setSelectedSize(size);
+                        setSizeError('');
+                      }}
                       aria-pressed={selectedSize === size}
+                      className={`h-11 min-w-12 border px-3 text-[0.8125rem] transition-colors ${
+                        selectedSize === size
+                          ? 'border-ink bg-ink text-paper'
+                          : 'border-line text-ink-60 hover:border-ink'
+                      }`}
                     >
                       {size}
                     </button>
                   ))}
                 </div>
-                {selectedSize && <p className="mt-2 text-sm text-gray-600">Selected: {selectedSize}</p>}
+
+                {sizeError && (
+                  <p role="alert" className="t-caption mt-2.5 text-error">
+                    {sizeError}
+                  </p>
+                )}
               </fieldset>
             )}
 
-            {/* Quantity Selector */}
-            <div className="mt-8">
-              <label htmlFor="quantity" className="text-sm font-medium mb-3 block">Quantity</label>
-              <div className="inline-flex items-center border border-gray-200 rounded-md">
-                <button
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="p-3 text-gray-500 hover:text-black hover:bg-gray-50 transition-colors"
-                  aria-label="Decrease quantity"
-                  disabled={quantity <= 1}
-                >
-                  <Minus size={18} strokeWidth={2} />
-                </button>
-                <input
-                  id="quantity"
-                  type="number"
-                  value={quantity}
-                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                  className="w-16 text-center border-x border-gray-200 focus:outline-none focus:ring-2 focus:ring-black"
-                  min="1"
-                  max={product.stock}
-                  aria-label="Quantity"
-                />
-                <button
-                  onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
-                  className="p-3 text-gray-500 hover:text-black hover:bg-gray-50 transition-colors"
-                  aria-label="Increase quantity"
-                  disabled={quantity >= product.stock}
-                >
-                  <Plus size={18} strokeWidth={2} />
-                </button>
+            {/* Quantity */}
+            {!soldOut && (
+              <div className="mt-7">
+                <label htmlFor="quantity" className="t-eyebrow text-ink-40">
+                  Quantity
+                </label>
+                <div className="mt-3 inline-flex items-center border border-line">
+                  <button
+                    type="button"
+                    onClick={() => setQuantity((prev) => Math.max(1, prev - 1))}
+                    disabled={quantity <= 1}
+                    aria-label="Decrease quantity"
+                    className="flex size-11 items-center justify-center text-ink-60 transition-colors hover:text-ink disabled:opacity-30"
+                  >
+                    <Minus size={15} strokeWidth={1.75} aria-hidden="true" />
+                  </button>
+                  <input
+                    id="quantity"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={product.stock}
+                    value={quantity}
+                    onChange={(event) => {
+                      const next = Number.parseInt(event.target.value, 10);
+                      setQuantity(Number.isNaN(next) ? 1 : Math.min(Math.max(next, 1), product.stock));
+                    }}
+                    className="h-11 w-14 border-x border-line text-center text-[0.875rem] tabular-nums outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setQuantity((prev) => Math.min(product.stock, prev + 1))}
+                    disabled={quantity >= product.stock}
+                    aria-label="Increase quantity"
+                    className="flex size-11 items-center justify-center text-ink-60 transition-colors hover:text-ink disabled:opacity-30"
+                  >
+                    <Plus size={15} strokeWidth={1.75} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
-              <p className="mt-2 text-sm text-gray-500">{product.stock - quantity < 5 ? `Only ${product.stock} left in stock` : `${product.stock} in stock`}</p>
+            )}
+
+            {/* Actions */}
+            <div className="mt-8 flex flex-col gap-3">
+              {soldOut ? (
+                <Button size="lg" fullWidth disabled>
+                  Sold out
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    size="lg"
+                    fullWidth
+                    onClick={handleAddToCart}
+                    iconLeft={<ShoppingBag size={15} strokeWidth={2} aria-hidden="true" />}
+                  >
+                    Add to bag
+                  </Button>
+
+                  <div className="flex gap-3">
+                    <Button
+                      size="lg"
+                      variant="secondary"
+                      onClick={handleToggleWishlist}
+                      aria-pressed={saved}
+                      className="flex-1"
+                      iconLeft={
+                        <Heart
+                          size={15}
+                          strokeWidth={1.75}
+                          className={saved ? 'fill-ink' : ''}
+                          aria-hidden="true"
+                        />
+                      }
+                    >
+                      {saved ? 'Saved' : 'Save'}
+                    </Button>
+
+                    <Button
+                      size="lg"
+                      variant="secondary"
+                      onClick={handleShare}
+                      aria-label="Share this product"
+                      className="flex-1"
+                      iconLeft={<Share2 size={15} strokeWidth={1.75} aria-hidden="true" />}
+                    >
+                      Share
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Add to Cart & Buy Now */}
-            <div className="mt-8 flex flex-col sm:flex-row gap-4">
-              <button
-                onClick={handleAddToCart}
-                disabled={isAdding}
-                className="flex-1 h-12 bg-black text-white text-sm font-semibold rounded-md hover:bg-gray-800 transition-colors disabled:opacity-50"
-              >
-                {isAdding ? 'Adding...' : 'Add to Bag'}
-              </button>
+            <ul className="mt-8 grid grid-cols-3 gap-4 border-t border-line pt-6">
+              {DELIVERY_NOTES.map((note) => (
+                <li key={note.title}>
+                  <note.icon size={18} strokeWidth={1.4} className="text-ink-60" aria-hidden="true" />
+                  <p className="mt-2 text-[0.75rem] font-medium leading-tight text-ink">
+                    {note.title}
+                  </p>
+                  <p className="mt-1 text-[0.6875rem] leading-tight text-ink-40">{note.body}</p>
+                </li>
+              ))}
+            </ul>
 
-              <Link
-                to="/checkout"
-                className="flex-1 h-12 flex items-center justify-center border border-gray-200 text-sm font-semibold text-gray-900 rounded-md hover:bg-gray-50 transition-colors"
-              >
-                Buy Now
-              </Link>
-            </div>
+            {/* Details tabs */}
+            <div className="mt-10 border-t border-line pt-8">
+              <div role="tablist" aria-label="Product information" className="flex gap-6">
+                {detailTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    id={`tab-${tab.id}`}
+                    aria-selected={detailsTab === tab.id}
+                    aria-controls={`panel-${tab.id}`}
+                    onClick={() => setDetailsTab(tab.id)}
+                    className={`-mb-px border-b-2 pb-3 text-[0.8125rem] transition-colors ${
+                      detailsTab === tab.id
+                        ? 'border-ink text-ink'
+                        : 'border-transparent text-ink-40 hover:text-ink-60'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
 
-            {/* Product Tabs */}
-            <div className="mt-12 border-t border-gray-100 pt-8">
-              <ProductTabs product={product} />
+              <div className="pt-5">
+                {detailsTab === 'description' && (
+                  <div id="panel-description" role="tabpanel" aria-labelledby="tab-description">
+                    <p className="t-body">{product.description}</p>
+                  </div>
+                )}
+
+                {detailsTab === 'details' && (
+                  <div id="panel-details" role="tabpanel" aria-labelledby="tab-details">
+                    <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-[0.8125rem]">
+                      <div>
+                        <dt className="text-ink-40">Category</dt>
+                        <dd className="mt-0.5 capitalize text-ink">{product.category}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-ink-40">Type</dt>
+                        <dd className="mt-0.5 capitalize text-ink">{product.subcategory ?? '—'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-ink-40">Sizes</dt>
+                        <dd className="mt-0.5 text-ink">{product.sizes?.join(', ') ?? 'One size'}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-ink-40">Colours</dt>
+                        <dd className="mt-0.5 text-ink">
+                          {product.colors?.map((color) => color.name).join(', ') ?? '—'}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                )}
+
+                {detailsTab === 'delivery' && (
+                  <div id="panel-delivery" role="tabpanel" aria-labelledby="tab-delivery">
+                    <div className="flex flex-col gap-3 text-[0.875rem] leading-relaxed text-ink-60">
+                      <p>
+                        Free delivery on orders over 5,000 ETB, otherwise 150 ETB flat. Addis Ababa
+                        takes 3–5 business days; other regions 5–7.
+                      </p>
+                      <p>
+                        Returns accepted within 14 days of delivery, unworn with original tags.
+                      </p>
+                      <p>
+                        <Link to="/shipping" className="link-underline text-ink">
+                          Full delivery and returns policy
+                        </Link>
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Related Products */}
-        {relatedProducts.length > 0 && (
-          <section className="mt-16" aria-labelledby="related-heading">
-            <div className="mb-8 flex items-end justify-between">
-              <h2 id="related-heading" className="text-2xl font-medium">You may also like</h2>
-              <Link to={`/shop?category=${product.category}`} className="text-sm font-medium hover:underline">
-                View all <ChevronRight size={14} />
+      {related.length > 0 && (
+        <section className="border-t border-line" aria-labelledby="related-heading">
+          <div className="shell section-y">
+            <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <h2 id="related-heading" className="t-section">
+                You may also like
+              </h2>
+              <Link
+                to={`/shop?category=${product.category}`}
+                className="link-underline inline-flex items-center gap-1.5 self-start text-[0.8125rem] text-ink sm:self-auto"
+              >
+                View all {product.category}
+                <ChevronRight size={14} strokeWidth={2} aria-hidden="true" />
               </Link>
-            </div>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-10 md:grid-cols-4 md:gap-6">
-              {relatedProducts.map((p) => (
-                <ProductCard key={p.id} product={p} />
-              ))}
-            </div>
-          </section>
-        )}
-      </main>
-    </div>
-  );
-}
+            </header>
 
-function ProductTabs({ product }) {
-  const [activeTab, setActiveTab] = useState('description');
-
-  const tabs = [
-    { id: 'description', label: 'Description' },
-    { id: 'details', label: 'Details' },
-    { id: 'shipping', label: 'Shipping & Returns' },
-  ];
-
-  return (
-    <div>
-      <div className="flex border-b border-gray-100" role="tablist">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            role="tab"
-            aria-selected={activeTab === tab.id}
-            aria-controls={`${tab.id}-panel`}
-            id={`${tab.id}-tab`}
-            className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === tab.id
-                ? 'border-black text-black'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <div className="py-6">
-        {activeTab === 'description' && (
-          <div id="description-panel" role="tabpanel" aria-labelledby="description-tab" className="prose prose-gray max-w-none">
-            <p className="text-gray-600 leading-7">{product.description}</p>
-          </div>
-        )}
-
-        {activeTab === 'details' && (
-          <div id="details-panel" role="tabpanel" aria-labelledby="details-tab" className="space-y-4">
-            <dl className="grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
-              <div><dt className="text-gray-500">Category</dt><dd className="font-medium capitalize">{product.category}</dd></div>
-              <div><dt className="text-gray-500">Subcategory</dt><dd className="font-medium capitalize">{product.subcategory}</dd></div>
-              <div><dt className="text-gray-500">Available Sizes</dt><dd className="font-medium">{product.sizes?.join(', ') || 'One Size'}</dd></div>
-              <div><dt className="text-gray-500">Available Colors</dt><dd className="font-medium">{product.colors?.map(c => c.name).join(', ')}</dd></div>
-              <div><dt className="text-gray-500">Rating</dt><dd className="font-medium">{product.rating} ({product.reviewCount} reviews)</dd></div>
-            </dl>
-          </div>
-        )}
-
-        {activeTab === 'shipping' && (
-          <div id="shipping-panel" role="tabpanel" aria-labelledby="shipping-tab" className="space-y-4 text-sm text-gray-600">
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Delivery</h4>
-              <p>Free delivery on orders over 5,000 ETB. Standard delivery takes 3-5 business days within Addis Ababa, 5-7 business days to other regions.</p>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Returns</h4>
-              <p>We accept returns within 30 days of delivery. Items must be unworn, unwashed, and with original tags attached. Return shipping is free for orders over 5,000 ETB.</p>
-            </div>
-            <div>
-              <h4 className="font-medium text-gray-900 mb-2">Exchanges</h4>
-              <p>Size and color exchanges are free. Contact our support team to initiate an exchange.</p>
+            <div className="mt-10 lg:mt-14">
+              <ProductGrid
+                products={related}
+                renderItem={(item) => <ProductCard product={item} />}
+              />
             </div>
           </div>
-        )}
-      </div>
-    </div>
+        </section>
+      )}
+    </>
   );
 }

@@ -1,150 +1,262 @@
 import { useState } from 'react';
-import { Mail, Phone, MapPin, Clock, Send, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Mail, Phone, MapPin, Clock, Send, Info } from 'lucide-react';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import { useToast } from '../components/ui/Toast';
+import Select from '../components/ui/Select';
+import Textarea from '../components/ui/Textarea';
+import DemoBackendNotice from '../components/auth/DemoBackendNotice';
+
+const EMPTY_FORM = {
+  name: '',
+  email: '',
+  subject: '',
+  message: '',
+};
+
+const SUBJECTS = [
+  'Order inquiry',
+  'Shipping question',
+  'Return or exchange',
+  'Product question',
+  'Website feedback',
+  'Other',
+];
+
+const CONTACT_DETAILS = [
+  { icon: Mail, label: 'Email', value: 'support@birascollections.com', href: 'mailto:support@birascollections.com' },
+  { icon: Phone, label: 'Phone', value: '+251 911 234 567', href: 'tel:+251911234567' },
+  { icon: MapPin, label: 'Showroom', value: 'Bole Sub-city, Addis Ababa, Ethiopia', href: null },
+  { icon: Clock, label: 'Hours', value: 'Monday to Saturday, 9:00 – 19:00', href: null },
+];
+
+const HELP_LINKS = [
+  { label: 'Shipping information', to: '/shipping' },
+  { label: 'Returns and exchanges', to: '/returns' },
+  { label: 'Common questions', to: '/faq' },
+];
 
 export default function Contact() {
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    subject: '',
-    message: '',
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const toast = useToast();
+  const [sent, setSent] = useState(false);
 
-  const validate = () => {
-    const newErrors = {};
-    if (!formData.name.trim()) newErrors.name = 'Name is required';
-    if (!formData.email) newErrors.email = 'Email is required';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = 'Invalid email';
-    if (!formData.subject.trim()) newErrors.subject = 'Subject is required';
-    if (!formData.message.trim()) newErrors.message = 'Message is required';
-    else if (formData.message.trim().length < 10) newErrors.message = 'Message must be at least 10 characters';
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+    setErrors((prev) => (prev[name] ? { ...prev, [name]: undefined } : prev));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validate()) return;
+  const handleSubmit = (event) => {
+    event.preventDefault();
 
-    setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setIsSubmitting(false);
+    const nextErrors = {};
+    if (!form.name.trim()) nextErrors.name = 'Name is required';
+    if (!form.email.trim()) {
+      nextErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      nextErrors.email = 'Enter a valid email address';
+    }
+    if (!form.subject.trim()) nextErrors.subject = 'Subject is required';
+    if (!form.message.trim()) {
+      nextErrors.message = 'Message is required';
+    } else if (form.message.trim().length < 10) {
+      nextErrors.message = 'Message must be at least 10 characters';
+    }
 
-    toast.success('Message sent!', { message: 'We\'ll get back to you within 24 hours' });
-    setFormData({ name: '', email: '', subject: '', message: '' });
+    setErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
+
+    /*
+     * No mail transport is connected. Rather than show a fake "message sent"
+     * toast, confirm the form validated and tell the reader plainly that
+     * nothing was transmitted — and that email is the only real channel.
+     */
+    setSent(true);
   };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
-  };
-
-  const contactInfo = [
-    { icon: Mail, label: 'Email', value: 'support@birascollections.com', href: 'mailto:support@birascollections.com' },
-    { icon: Phone, label: 'Phone', value: '+251 911 234 567', href: 'tel:+251911234567' },
-    { icon: MapPin, label: 'Address', value: 'Bole Sub-city, Addis Ababa, Ethiopia', href: '#' },
-    { icon: Clock, label: 'Hours', value: 'Mon-Sat: 9:00 AM - 7:00 PM', href: null },
-  ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-100 bg-white">
-        <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8 lg:py-16">
-          <h1 className="text-4xl font-medium tracking-tight">Contact Us</h1>
-          <p className="mt-2 text-gray-500">We'd love to hear from you. Get in touch with our team.</p>
+    <>
+      <header className="border-b border-line">
+        <div className="shell py-10 lg:py-16">
+          <p className="t-eyebrow text-ink-40">Help</p>
+          <h1 className="t-page mt-3">Contact us</h1>
+          <p className="t-body mt-4 max-w-2xl text-[0.9375rem]">
+            Questions about sizing, an order, or a piece you have seen? Send a note and we will
+            reply within one business day.
+          </p>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-        <div className="grid gap-10 lg:grid-cols-3">
-          {/* Contact Info */}
-          <aside className="lg:col-span-1">
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-6">
-              {contactInfo.map((item) => (
-                <a key={item.label} href={item.href} className="flex items-start gap-4 p-4 rounded-lg hover:bg-gray-50 transition-colors">
-                  <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <item.icon size={20} strokeWidth={1.7} className="text-gray-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-gray-500">{item.label}</p>
-                    <p className="text-gray-900">{item.value}</p>
-                  </div>
-                </a>
-              ))}
+      <div className="shell py-10 lg:py-16">
+        <div className="grid gap-12 lg:grid-cols-[20rem_minmax(0,1fr)] lg:gap-16">
+          <aside className="lg:order-1">
+            <h2 className="t-eyebrow text-ink-40">Reach us directly</h2>
 
-              <div className="pt-4 border-t border-gray-100">
-                <h3 className="font-medium mb-3">Frequently Asked Questions</h3>
-                <div className="space-y-2">
-                  <a href="/shipping" className="block text-sm text-gray-600 hover:text-black">Shipping information</a>
-                  <a href="/returns" className="block text-sm text-gray-600 hover:text-black">Returns & exchanges</a>
-                  <a href="/faq" className="block text-sm text-gray-600 hover:text-black">FAQ</a>
-                  <a href="/contact" className="block text-sm text-gray-600 hover:text-black">Contact support</a>
-                </div>
-              </div>
+            <ul className="mt-5 flex flex-col divide-y divide-line border-y border-line">
+              {CONTACT_DETAILS.map((detail) => {
+                const body = (
+                  <>
+                    <span className="flex size-9 shrink-0 items-center justify-center border border-line text-ink-40">
+                      <detail.icon size={16} strokeWidth={1.6} aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block text-[0.8125rem] text-ink-40">{detail.label}</span>
+                      <span className="mt-0.5 block text-[0.875rem] text-ink">{detail.value}</span>
+                    </span>
+                  </>
+                );
+
+                return (
+                  <li key={detail.label} className="py-4">
+                    {detail.href ? (
+                      <a
+                        href={detail.href}
+                        className="flex items-start gap-4 transition-colors hover:text-ink focus:outline-none focus-visible:ring-1 focus-visible:ring-ink"
+                      >
+                        {body}
+                      </a>
+                    ) : (
+                      <span className="flex items-start gap-4">{body}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+
+            <div className="mt-8">
+              <h2 className="t-eyebrow text-ink-40">Helpful pages</h2>
+              <ul className="mt-4 flex flex-col gap-2.5">
+                {HELP_LINKS.map((link) => (
+                  <li key={link.to}>
+                    <Link
+                      to={link.to}
+                      className="text-[0.875rem] text-ink-60 underline decoration-line underline-offset-4 transition-colors hover:text-ink hover:decoration-ink"
+                    >
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </div>
           </aside>
 
-          {/* Contact Form */}
-          <div className="lg:col-span-2">
-            <div className="bg-white rounded-xl border border-gray-100 p-6 lg:p-8">
-              <h2 className="text-2xl font-medium mb-6">Send us a message</h2>
+          <div className="min-w-0 lg:order-2">
+            <div className="mb-8">
+              <DemoBackendNotice
+                title="This form is not connected"
+                body="There is no mail service behind it. You can compose and validate a message, but nothing is transmitted or stored — please email or call us instead."
+              />
+            </div>
 
-              <form onSubmit={handleSubmit} className="space-y-6" noValidate>
-                <div className="grid gap-6 md:grid-cols-2">
-                  <Input label="Full name" name="name" type="text" value={formData.name} onChange={handleChange} error={errors.name} autoComplete="name" placeholder="Your name" />
-                  <Input label="Email address" name="email" type="email" value={formData.email} onChange={handleChange} error={errors.email} autoComplete="email" placeholder="you@example.com" />
+            <h2 className="t-section !text-xl">Send a message</h2>
+
+            {sent ? (
+              <div
+                className="mt-6 border border-line bg-sand/50 p-6"
+                role="status"
+                aria-live="polite"
+              >
+                <p className="flex items-start gap-2 text-[0.875rem] text-ink">
+                  <Info size={15} strokeWidth={1.6} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    Your message is valid, but it was not sent — there is no mail service connected
+                    to this form.
+                  </span>
+                </p>
+                <p className="mt-3 text-[0.875rem] text-ink-60">
+                  Email{' '}
+                  <a
+                    href="mailto:support@birascollections.com"
+                    className="text-ink underline decoration-line underline-offset-4 hover:decoration-ink"
+                  >
+                    support@birascollections.com
+                  </a>{' '}
+                  or call{' '}
+                  <a
+                    href="tel:+251911234567"
+                    className="text-ink underline decoration-line underline-offset-4 hover:decoration-ink"
+                  >
+                    +251 911 234 567
+                  </a>
+                  , Monday to Saturday, 9:00 – 19:00.
+                </p>
+                <Button
+                  className="mt-6"
+                  variant="secondary"
+                  onClick={() => {
+                    setForm(EMPTY_FORM);
+                    setSent(false);
+                  }}
+                >
+                  Write another message
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} noValidate className="mt-6 flex flex-col gap-5">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <Input
+                    label="Full name"
+                    name="name"
+                    value={form.name}
+                    onChange={handleChange}
+                    error={errors.name}
+                    autoComplete="name"
+                    required
+                  />
+                  <Input
+                    label="Email address"
+                    name="email"
+                    type="email"
+                    value={form.email}
+                    onChange={handleChange}
+                    error={errors.email}
+                    autoComplete="email"
+                    required
+                  />
                 </div>
-                <Input label="Subject" name="subject" type="text" value={formData.subject} onChange={handleChange} error={errors.subject} placeholder="What's this about?" list="subjects" />
-                <datalist id="subjects">
-                  <option value="Order inquiry" />
-                  <option value="Shipping question" />
-                  <option value="Return/Exchange" />
-                  <option value="Product question" />
-                  <option value="Website feedback" />
-                  <option value="Other" />
-                </datalist>
+
+                <Select
+                  label="Subject"
+                  name="subject"
+                  value={form.subject}
+                  onChange={handleChange}
+                  error={errors.subject}
+                  required
+                >
+                  <option value="">Choose a subject</option>
+                  {SUBJECTS.map((subject) => (
+                    <option key={subject} value={subject}>
+                      {subject}
+                    </option>
+                  ))}
+                </Select>
+
+                <Textarea
+                  label="Message"
+                  name="message"
+                  value={form.message}
+                  onChange={handleChange}
+                  error={errors.message}
+                  rows={6}
+                  hint="The more detail you give, the faster we can help."
+                  placeholder="Tell us what you need help with."
+                  required
+                />
 
                 <div>
-                  <label htmlFor="message" className="block text-sm font-medium text-gray-900 mb-1.5">Message</label>
-                  <textarea
-                    id="message"
-                    name="message"
-                    value={formData.message}
-                    onChange={handleChange}
-                    rows={6}
-                    className={`w-full px-4 py-3 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent ${errors.message ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 hover:border-gray-300'} disabled:bg-gray-50`}
-                    placeholder="Tell us how we can help..."
-                    aria-invalid={errors.message ? 'true' : 'false'}
-                    aria-describedby={errors.message ? 'message-error' : 'message-hint'}
-                  />
-                  {errors.message && <p id="message-error" className="mt-1.5 text-sm text-red-600" role="alert">{errors.message}</p>}
-                  {!errors.message && <p id="message-hint" className="mt-1.5 text-sm text-gray-500">Please provide as much detail as possible.</p>}
+                  <Button
+                    type="submit"
+                    iconLeft={<Send size={15} strokeWidth={1.8} aria-hidden="true" />}
+                  >
+                    Review message
+                  </Button>
                 </div>
-
-                <Button type="submit" loading={isSubmitting} className="w-full sm:w-auto">
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="animate-spin h-5 w-5" />
-                      Sending...
-                    </>
-                  ) : (
-                    <>
-                      Send Message
-                      <Send size={16} strokeWidth={2} className="ml-1" />
-                    </>
-                  )}
-                </Button>
               </form>
-            </div>
+            )}
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </>
   );
 }

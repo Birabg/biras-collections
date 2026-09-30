@@ -1,138 +1,259 @@
-import { Link } from 'react-router-dom';
-import { Package, ChevronRight, ChevronLeft, Filter, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Package, ChevronRight, SearchX, ChevronLeft } from 'lucide-react';
+import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
 import { formatPrice } from '../utils/currency';
+import { getProductBySlug } from '../data/products';
+import {
+  fetchOrders,
+  STATUS_META,
+  STATUS_TONE_CLASS,
+  formatOrderDate,
+  orderItemCount,
+  ORDER_STATUS,
+} from '../data/customerOrders';
 
-const mockOrders = [
-  {
-    id: 'ORD-2026-001',
-    date: 'Sep 15, 2026',
-    status: 'Delivered',
-    statusColor: 'bg-green-50 text-green-700',
-    items: [
-      { name: 'Classic Linen Shirt', quantity: 2, price: 1850, image: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=200&q=80' },
-      { name: 'Minimalist Leather Belt', quantity: 1, price: 650, image: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=200&q=80' },
-    ],
-    subtotal: 4350,
-    delivery: 0,
-    total: 4350,
-  },
-  {
-    id: 'ORD-2026-002',
-    date: 'Sep 20, 2026',
-    status: 'Processing',
-    statusColor: 'bg-blue-50 text-blue-700',
-    items: [
-      { name: 'Elegant Summer Dress', quantity: 1, price: 2950, image: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?auto=format&fit=crop&w=200&q=80' },
-    ],
-    subtotal: 2950,
-    delivery: 150,
-    total: 3100,
-  },
-  {
-    id: 'ORD-2026-003',
-    date: 'Sep 25, 2026',
-    status: 'Shipped',
-    statusColor: 'bg-purple-50 text-purple-700',
-    items: [
-      { name: 'Premium Leather Bag', quantity: 1, price: 4200, image: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=200&q=80' },
-      { name: 'Cashmere Blend Scarf', quantity: 1, price: 1200, image: 'https://images.unsplash.com/photo-1601924994987-69e26d50dc26?auto=format&fit=crop&w=200&q=80' },
-    ],
-    subtotal: 5400,
-    delivery: 0,
-    total: 5400,
-  },
-];
+/**
+ * Resolves the real catalogue image for an order line. Falls back to the
+ * product's own image rather than a hard-coded photo, so the thumbnail can
+ * never drift from the product page.
+ */
+function ProductThumb({ slug, name }) {
+  const product = getProductBySlug(slug);
+  const image = product?.images?.[0] ?? product?.image;
 
-const statusOptions = ['All', 'Processing', 'Shipped', 'Delivered', 'Cancelled', 'Returned'];
+  if (!image) return null;
 
-export default function Orders() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-100 bg-white">
-        <div className="mx-auto max-w-7xl px-5 py-6 lg:px-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <h1 className="text-3xl font-medium tracking-tight">My Orders</h1>
-          <div className="flex items-center gap-3">
-            <select className="h-10 px-4 pr-10 text-sm border border-gray-200 rounded-lg bg-white appearance-none" aria-label="Filter orders by status">
-              {statusOptions.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
-            </select>
-            <Link to="/shop" className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-              <Package size={16} strokeWidth={1.7} />
-              Continue Shopping
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-        <div className="space-y-6">
-          {mockOrders.map((order) => (
-            <OrderCard key={order.id} order={order} />
-          ))}
-
-          {/* Pagination */}
-          <div className="flex items-center justify-center gap-2">
-            <button className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50" disabled aria-label="Previous page">
-              <ChevronLeft size={18} strokeWidth={2} />
-            </button>
-            <button className="h-10 w-10 flex items-center justify-center bg-black text-white rounded-lg font-medium">1</button>
-            <button className="h-10 w-10 flex items-center justify-center border border-gray-200 rounded-lg hover:bg-gray-50">2</button>
-            <button className="h-10 w-10 flex items-center justify-center border border-gray-200 rounded-lg hover:bg-gray-50">3</button>
-            <button className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50" aria-label="Next page">
-              <ChevronRight size={18} strokeWidth={2} />
-            </button>
-          </div>
-        </div>
-      </main>
-    </div>
+    <img
+      src={image}
+      alt={name}
+      loading="lazy"
+      decoding="async"
+      className="size-full object-cover"
+    />
   );
 }
 
-function OrderCard({ order }) {
+const FILTERS = [
+  { value: 'all', label: 'All' },
+  { value: ORDER_STATUS.PROCESSING, label: STATUS_META[ORDER_STATUS.PROCESSING].label },
+  { value: ORDER_STATUS.SHIPPED, label: STATUS_META[ORDER_STATUS.SHIPPED].label },
+  { value: ORDER_STATUS.DELIVERED, label: STATUS_META[ORDER_STATUS.DELIVERED].label },
+];
+
+export default function Orders() {
+  const navigate = useNavigate();
+
+  const [orders, setOrders] = useState([]);
+  const [status, setStatus] = useState('all');
+  const [page, setPage] = useState(1);
+
+  const PAGE_SIZE = 5;
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchOrders().then((result) => {
+      if (!cancelled) setOrders(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filtered = status === 'all' ? orders : orders.filter((order) => order.status === status);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const visible = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  // Changing the filter should return the shopper to the first page.
+  const changeFilter = (value) => {
+    setStatus(value);
+    setPage(1);
+  };
+
   return (
-    <article className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-      <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3">
-            <Package className="h-10 w-10 text-gray-400" strokeWidth={1.7} />
-            <div>
-              <Link to={`/account/orders/${order.id}`} className="font-medium text-gray-900 hover:underline">{order.id}</Link>
-              <p className="text-sm text-gray-500">{order.date}</p>
-            </div>
-          </div>
-          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${order.statusColor}`}>
-            {order.status}
-          </span>
+    <>
+      <header className="border-b border-line">
+        <div className="shell py-10 lg:py-14">
+          <p className="t-eyebrow text-ink-40">Your account</p>
+          <h1 className="t-page mt-3">Orders</h1>
+          <p className="t-body mt-2" role="status" aria-live="polite">
+            {filtered.length === 0
+              ? 'No orders'
+              : `${filtered.length} ${filtered.length === 1 ? 'order' : 'orders'}`}
+          </p>
         </div>
-        <Link to={`/account/orders/${order.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-black">
-          View Details
-          <ChevronRight size={14} />
-        </Link>
-      </div>
+      </header>
 
-      <div className="p-6">
-        <div className="flex flex-col md:flex-row gap-4 mb-6">
-          {order.items.map((item, idx) => (
-            <Link key={idx} to={`/product/${item.name.toLowerCase().replace(/\s+/g, '-')}`} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-              <img src={item.image} alt={item.name} className="h-16 w-12 object-cover rounded" />
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm truncate">{item.name}</p>
-                <p className="text-sm text-gray-500">Qty: {item.quantity} × {item.price.toLocaleString()} ETB</p>
-              </div>
-            </Link>
-          ))}
-        </div>
+      <div className="shell py-10 lg:py-14">
+        {orders.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line pb-5">
+            {FILTERS.map((filter) => {
+              const count =
+                filter.value === 'all'
+                  ? orders.length
+                  : orders.filter((order) => order.status === filter.value).length;
 
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-4 border-t border-gray-100">
-          <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
-            <span>Subtotal: <span className="font-medium text-gray-900">{formatPrice(order.subtotal)}</span></span>
-            <span>Delivery: <span className="font-medium text-gray-900">{order.delivery === 0 ? 'Free' : formatPrice(order.delivery)}</span></span>
+              // Hide filters that would always return nothing.
+              if (count === 0) return null;
+
+              const isActive = status === filter.value;
+
+              return (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() => changeFilter(filter.value)}
+                  aria-pressed={isActive}
+                  className={`h-9 border px-4 text-[0.75rem] transition-colors ${
+                    isActive
+                      ? 'border-ink bg-ink text-paper'
+                      : 'border-line text-ink-60 hover:border-ink'
+                  }`}
+                >
+                  {filter.label}
+                  <span className="ml-1.5 tabular-nums opacity-60">{count}</span>
+                </button>
+              );
+            })}
           </div>
-          <div className="text-right sm:text-right">
-            <p className="text-sm text-gray-500">Total</p>
-            <p className="text-xl font-semibold text-gray-900">{formatPrice(order.total)}</p>
-          </div>
+        )}
+
+        {visible.length === 0 ? (
+          <EmptyState
+            icon={SearchX}
+            title={status === 'all' ? 'No orders yet' : `No ${STATUS_META[status]?.label.toLowerCase()} orders`}
+            description={
+              status === 'all'
+                ? 'When you place an order it will appear here with its status and tracking.'
+                : 'Try a different status filter to see your other orders.'
+            }
+            actionLabel={status === 'all' ? 'Browse the collection' : undefined}
+            onAction={status === 'all' ? () => navigate('/shop') : undefined}
+          />
+        ) : (
+          <>
+            <ul className="mt-8 flex flex-col gap-5">
+              {visible.map((order) => {
+                const meta = STATUS_META[order.status];
+                const count = orderItemCount(order);
+
+                return (
+                  <li key={order.id} className="border border-line">
+                    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 border-b border-line bg-sand/50 px-5 py-4">
+                      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                        <h2 className="text-[0.9375rem] font-medium text-ink">{order.id}</h2>
+                        <p className="text-[0.8125rem] text-ink-40">
+                          Placed {formatOrderDate(order.placedAt)}
+                        </p>
+                      </div>
+
+                      <span
+                        className={`px-2.5 py-1 text-[0.6875rem] font-medium uppercase tracking-[0.1em] ${STATUS_TONE_CLASS[meta.tone]}`}
+                      >
+                        {meta.label}
+                      </span>
+                    </div>
+
+                    <div className="px-5 py-5">
+                      <ul className="flex flex-col gap-4 sm:flex-row sm:flex-wrap">
+                        {order.items.map((item) => (
+                          <li key={`${order.id}-${item.slug}-${item.size}`} className="min-w-0">
+                            <Link
+                              to={`/product/${item.slug}`}
+                              className="group flex items-center gap-3"
+                            >
+                              <span className="block h-20 w-16 shrink-0 overflow-hidden bg-sand">
+                                <ProductThumb slug={item.slug} name={item.name} />
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-[0.875rem] text-ink group-hover:text-ink-60">
+                                  {item.name}
+                                </span>
+                                <span className="t-caption">
+                                  {[item.color, item.size, `Qty ${item.quantity}`]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                </span>
+                              </span>
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+
+                      <div className="mt-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-t border-line pt-4">
+                        <p className="t-caption">
+                          {count} {count === 1 ? 'item' : 'items'} ·{' '}
+                          {order.delivery === 0 ? 'Free delivery' : `${formatPrice(order.delivery)} delivery`}
+                        </p>
+
+                        <div className="flex items-center gap-6">
+                          <p className="text-[1.0625rem] tabular-nums text-ink">
+                            {formatPrice(order.total)}
+                          </p>
+                          <Link
+                            to={`/account/orders/${order.id}`}
+                            className="link-underline inline-flex items-center gap-1.5 text-[0.8125rem] text-ink"
+                          >
+                            View details
+                            <ChevronRight size={14} strokeWidth={2} aria-hidden="true" />
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {pageCount > 1 && (
+              <nav
+                className="mt-10 flex items-center justify-center gap-3"
+                aria-label="Order pages"
+              >
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                  disabled={safePage === 1}
+                  aria-label="Previous page"
+                  iconLeft={<ChevronLeft size={14} strokeWidth={2} aria-hidden="true" />}
+                >
+                  Prev
+                </Button>
+
+                <p className="t-caption tabular-nums" aria-live="polite">
+                  Page {safePage} of {pageCount}
+                </p>
+
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setPage((prev) => Math.min(pageCount, prev + 1))}
+                  disabled={safePage === pageCount}
+                  aria-label="Next page"
+                  iconRight={<ChevronRight size={14} strokeWidth={2} aria-hidden="true" />}
+                >
+                  Next
+                </Button>
+              </nav>
+            )}
+          </>
+        )}
+
+        <div className="mt-10 border-t border-line pt-8">
+          <Button
+            variant="secondary"
+            onClick={() => navigate('/shop')}
+            iconLeft={<Package size={15} strokeWidth={1.75} aria-hidden="true" />}
+          >
+            Continue shopping
+          </Button>
         </div>
       </div>
-    </article>
+    </>
   );
 }

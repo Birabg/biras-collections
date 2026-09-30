@@ -1,40 +1,51 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 
+/**
+ * Editorial story panel — split image/copy, generous whitespace.
+ * Deliberately not a "card": no border, no radius, no shadow.
+ */
 export default function StoryBanner() {
   return (
-    <section className="mx-auto max-w-7xl px-5 py-20 lg:px-8" aria-labelledby="story-heading">
-      <div className="grid overflow-hidden bg-[#111111] md:grid-cols-2">
-        <div className="flex min-h-[450px] flex-col justify-center px-8 py-14 text-white sm:px-12 lg:px-16">
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-white/60">
-            Our philosophy
-          </p>
-
-          <h2 id="story-heading" className="mt-5 text-4xl font-medium leading-tight">
-            Fashion should feel like you.
-          </h2>
-
-          <p className="mt-5 max-w-md text-sm leading-7 text-white/65">
-            Bira's Collections brings together timeless essentials and
-            modern pieces that make everyday dressing simple, confident,
-            and personal.
-          </p>
-
-          <Link
-            to="/shop"
-            className="mt-8 inline-flex w-fit items-center gap-3 border border-white/30 px-6 py-3 text-sm font-medium transition-colors hover:bg-white hover:text-black"
-          >
-            Discover our collection
-            <ArrowRight size={16} />
-          </Link>
+    <section className="border-t border-line" aria-labelledby="story-heading">
+      <div className="mx-auto grid max-w-[90rem] items-center gap-10 px-5 py-16 lg:grid-cols-2 lg:gap-20 lg:px-12 lg:py-28">
+        <div className="relative order-2 lg:order-1">
+          <div className="aspect-[4/5] overflow-hidden bg-sand lg:aspect-[4/3]">
+            <img
+              src="https://images.unsplash.com/photo-1445205170230-053b83016050?auto=format&fit=crop&w=1400&q=85"
+              alt="Garments on rails in a bright studio"
+              loading="lazy"
+              decoding="async"
+              className="size-full object-cover"
+            />
+          </div>
         </div>
 
-        <div className="min-h-[450px] relative">
-          <img
-            src="https://images.unsplash.com/photo-1529139574466-a303027c1d8b?auto=format&fit=crop&w=1200&q=85"
-            alt="Fashion collection showcasing our philosophy"
-            className="h-full w-full object-cover"
-          />
+        <div className="order-1 max-w-lg lg:order-2">
+          <p className="t-eyebrow text-ink-40">Our approach</p>
+
+          <h2 id="story-heading" className="t-section mt-4">
+            Made in small runs, built to be worn often
+          </h2>
+
+          <div className="mt-6 flex flex-col gap-4">
+            <p className="t-body">
+              We produce in limited quantities and restock only what sells. That keeps quality high
+              and waste low, and it means the piece you love is more likely to still be here.
+            </p>
+            <p className="t-body">
+              Materials are chosen for how they age — linen that softens, leather that patinas,
+              cotton that holds its shape. Nothing is designed for a single season of attention.
+            </p>
+          </div>
+
+          <Link
+            to="/about"
+            className="link-underline mt-8 inline-flex items-center gap-2 text-[0.8125rem] font-medium text-ink"
+          >
+            Read our story
+            <ArrowRight size={14} strokeWidth={2} aria-hidden="true" />
+          </Link>
         </div>
       </div>
     </section>

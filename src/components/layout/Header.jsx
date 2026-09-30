@@ -1,380 +1,395 @@
-import { useState, useEffect, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Search, Heart, ShoppingBag, Menu, X, User } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import {
+  Search,
+  Heart,
+  ShoppingBag,
+  Menu,
+  X,
+  User,
+  LayoutDashboard,
+  LogOut,
+  Package,
+  ChevronRight,
+} from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import { useWishlist } from '../../context/WishlistContext';
+import { useUI } from '../../context/UIContext';
+import { useAuth, SESSION } from '../../auth/AuthContext';
+import { BACKOFFICE_ROLES } from '../../auth/roles';
+import SearchOverlay from './SearchOverlay';
 
-const navItems = [
-  { label: 'Home', href: '/' },
-  { label: 'Shop', href: '/shop' },
-  { label: 'Women', href: '/shop?category=women' },
-  { label: 'Men', href: '/shop?category=men' },
-  { label: 'Accessories', href: '/shop?category=accessories' },
-  { label: 'New Arrivals', href: '/shop?new=true' },
+/* Shop navigation — the query strings Shop actually reads. */
+const SHOP_NAV = [
+  { label: 'Home', to: '/', end: true },
+  { label: 'Shop', to: '/shop' },
+  { label: 'Women', to: '/shop?category=women' },
+  { label: 'Men', to: '/shop?category=men' },
+  { label: 'Accessories', to: '/shop?category=accessories' },
+  { label: 'New Arrivals', to: '/shop?new=true' },
 ];
 
-const mobileAccountItems = [
-  { label: 'Login', href: '/login' },
-  { label: 'My Account', href: '/account' },
-  { label: 'Wishlist', href: '/wishlist' },
-  { label: 'Orders', href: '/account/orders' },
+/* Mirrors the mobile drawer grouping. */
+const HELP_LINKS = [
+  { label: 'Contact', to: '/contact' },
+  { label: 'Shipping', to: '/shipping' },
+  { label: 'Returns', to: '/returns' },
+  { label: 'FAQ', to: '/faq' },
 ];
 
-const mobileHelpItems = [
-  { label: 'Contact', href: '/contact' },
-  { label: 'Shipping', href: '/shipping' },
-  { label: 'Returns', href: '/returns' },
-  { label: 'FAQ', href: '/faq' },
-];
+/** Count bubble, shown only when there is something to count. */
+function CountBubble({ count }) {
+  if (!count) return null;
+  return (
+    <span
+      className="absolute -right-0.5 -top-0.5 flex size-4 items-center justify-center rounded-full bg-ink text-[0.5625rem] font-semibold tabular-nums text-paper"
+      aria-hidden="true"
+    >
+      {count > 9 ? '9+' : count}
+    </span>
+  );
+}
+
+function IconButton({ label, badge, onClick, to, children, ...rest }) {
+  const className =
+    'relative -mr-1 p-2 text-ink transition-colors duration-200 hover:text-ink-60';
+
+  const inner = (
+    <>
+      {children}
+      <CountBubble count={badge} />
+    </>
+  );
+
+  if (to) {
+    return (
+      <Link to={to} aria-label={label} className={className} {...rest}>
+        {inner}
+      </Link>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} aria-label={label} className={className} {...rest}>
+      {inner}
+    </button>
+  );
+}
 
 export default function Header() {
-  const location = useLocation();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const mobileMenuRef = useRef(null);
   const { getItemCount } = useCart();
   const { wishlist } = useWishlist();
+  const { isMenuOpen, openMenu, closeMenu, openSearch, openCart } = useUI();
+  const { isAuthenticated, isLoading, hasRole, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const menuPanel = useRef(null);
+
   const cartCount = getItemCount();
   const wishlistCount = wishlist.length;
+  const isBackoffice = hasRole(BACKOFFICE_ROLES);
 
+  // Lock the page behind the mobile drawer
   useEffect(() => {
-    if (mobileMenuOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
+    if (!isMenuOpen) return undefined;
+    const { overflow } = document.body.style;
+    document.body.style.overflow = 'hidden';
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = overflow;
     };
-  }, [mobileMenuOpen]);
+  }, [isMenuOpen]);
 
-  const closeMobileMenu = () => setMobileMenuOpen(false);
+  // Escape closes the drawer
+  useEffect(() => {
+    if (!isMenuOpen) return undefined;
+    const onKey = (event) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [isMenuOpen, closeMenu]);
 
-  const isActive = (href) => {
-    if (href === '/') return location.pathname === '/';
-    return location.pathname === href || location.pathname.startsWith(href + '/');
+  // Active state is query-aware so Women/Men/Accessories highlight correctly
+  const isShopLinkActive = (to) => {
+    if (to === '/') return location.pathname === '/';
+    if (to === '/shop') return location.pathname === '/shop' && !location.search;
+    return location.pathname === '/shop' && location.search === to.split('?')[1];
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    closeMenu();
+    navigate('/');
   };
 
   return (
     <>
-      {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-gray-100 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/90">
-        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
-
+      <header className="sticky top-0 z-50 border-b border-line bg-paper/95 backdrop-blur supports-[backdrop-filter]:bg-paper/85">
+        <div className="mx-auto flex h-16 max-w-[90rem] items-center gap-6 px-5 md:h-20 lg:px-12">
           {/* Logo */}
-          <Link to="/" className="text-xl font-semibold tracking-tight" aria-label="Bira's Collections Home">
-            Bira's <span className="font-normal">Collections</span>
+          <Link
+            to="/"
+            className="shrink-0 font-display text-lg leading-none tracking-tight text-ink transition-opacity hover:opacity-70 md:text-xl"
+            aria-label="Bira's Collections — home"
+          >
+            Bira&rsquo;s <span className="italic">Collections</span>
           </Link>
 
-          {/* Desktop Navigation */}
-          <nav className="hidden items-center gap-8 md:flex" aria-label="Main navigation">
-            {navItems.map((item) => (
-              <Link
-                key={item.label}
-                to={item.href}
-                className={`text-sm font-medium transition-colors ${isActive(item.href) ? 'text-black' : 'text-gray-600 hover:text-black'}`}
-                aria-current={isActive(item.href) ? 'page' : undefined}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-
-          {/* Desktop Actions */}
-          <div className="hidden items-center gap-2 md:flex">
-            <button
-              onClick={() => setSearchOpen(true)}
-              className="p-2 rounded-full text-gray-500 hover:text-black hover:bg-gray-100 transition-colors"
-              aria-label="Search"
-              aria-expanded={searchOpen}
-            >
-              <Search size={20} strokeWidth={1.7} />
-            </button>
-
-            <Link
-              to="/wishlist"
-              className="p-2 rounded-full text-gray-500 hover:text-black hover:bg-gray-100 transition-colors relative"
-              aria-label={`Wishlist${wishlistCount > 0 ? `, ${wishlistCount} items` : ''}`}
-            >
-              <Heart size={20} strokeWidth={1.7} />
-              {wishlistCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center text-xs font-semibold text-white bg-black rounded-full">
-                  {wishlistCount > 9 ? '9+' : wishlistCount}
-                </span>
-              )}
-            </Link>
-
-            <Link
-              to="/account"
-              className="p-2 rounded-full text-gray-500 hover:text-black hover:bg-gray-100 transition-colors"
-              aria-label="My Account"
-            >
-              <User size={20} strokeWidth={1.7} />
-            </Link>
-
-            <Link
-              to="/cart"
-              className="p-2 rounded-full text-gray-500 hover:text-black hover:bg-gray-100 transition-colors relative"
-              aria-label={`Shopping bag${cartCount > 0 ? `, ${cartCount} items` : ''}`}
-            >
-              <ShoppingBag size={20} strokeWidth={1.7} />
-              {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center text-xs font-semibold text-white bg-black rounded-full">
-                  {cartCount > 9 ? '9+' : cartCount}
-                </span>
-              )}
-            </Link>
-          </div>
-
-          {/* Mobile Actions */}
-          <div className="flex items-center gap-2 md:hidden">
-            <button
-              onClick={() => setSearchOpen(true)}
-              className="p-2 rounded-full text-gray-500 hover:text-black hover:bg-gray-100 transition-colors"
-              aria-label="Search"
-            >
-              <Search size={20} strokeWidth={1.7} />
-            </button>
-
-            <Link
-              to="/wishlist"
-              className="p-2 rounded-full text-gray-500 hover:text-black hover:bg-gray-100 transition-colors relative"
-              aria-label={`Wishlist${wishlistCount > 0 ? `, ${wishlistCount} items` : ''}`}
-            >
-              <Heart size={20} strokeWidth={1.7} />
-              {wishlistCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center text-xs font-semibold text-white bg-black rounded-full">
-                  {wishlistCount > 9 ? '9+' : wishlistCount}
-                </span>
-              )}
-            </Link>
-
-            <Link
-              to="/cart"
-              className="p-2 rounded-full text-gray-500 hover:text-black hover:bg-gray-100 transition-colors relative"
-              aria-label={`Shopping bag${cartCount > 0 ? `, ${cartCount} items` : ''}`}
-            >
-              <ShoppingBag size={20} strokeWidth={1.7} />
-              {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center text-xs font-semibold text-white bg-black rounded-full">
-                  {cartCount > 9 ? '9+' : cartCount}
-                </span>
-              )}
-            </Link>
-
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 rounded-full text-gray-500 hover:text-black hover:bg-gray-100 transition-colors"
-              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
-              aria-expanded={mobileMenuOpen}
-              aria-controls="mobile-menu"
-            >
-              {mobileMenuOpen ? <X size={22} strokeWidth={2} /> : <Menu size={22} strokeWidth={2} />}
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile Navigation */}
-        <div
-          ref={mobileMenuRef}
-          id="mobile-menu"
-          className={`md:hidden overflow-hidden transition-all duration-300 ease-in-out ${
-            mobileMenuOpen ? 'max-h-96 opacity-100 visible' : 'max-h-0 opacity-0 invisible'
-          }`}
-          role="navigation"
-          aria-label="Mobile navigation"
-        >
-          <div className="border-t border-gray-100 bg-white px-5 pb-6">
-            <nav className="flex flex-col gap-1">
-              {navItems.map((item) => (
+          {/* Desktop navigation */}
+          <nav className="ml-4 hidden flex-1 items-center gap-7 lg:flex" aria-label="Main">
+            {SHOP_NAV.map((item) => {
+              const active = isShopLinkActive(item.to);
+              return (
                 <Link
                   key={item.label}
-                  to={item.href}
-                  onClick={closeMobileMenu}
-                  className={`px-3 py-3 text-base font-medium border-l-4 transition-colors ${
-                    isActive(item.href)
-                      ? 'border-black bg-gray-50 text-black'
-                      : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-black'
+                  to={item.to}
+                  aria-current={active ? 'page' : undefined}
+                  className={`link-underline py-1 text-[0.8125rem] tracking-wide transition-colors duration-200 ${
+                    active ? 'text-ink' : 'text-ink-60 hover:text-ink'
                   }`}
-                  aria-current={isActive(item.href) ? 'page' : undefined}
                 >
                   {item.label}
                 </Link>
-              ))}
-            </nav>
+              );
+            })}
+          </nav>
 
-            <div className="mt-6 pt-6 border-t border-gray-100">
-              <h3 className="px-3 text-xs font-semibold uppercase tracking-[0.15em] text-gray-500 mb-3">
-                Account
-              </h3>
-              <nav className="flex flex-col gap-1">
-                {mobileAccountItems.map((item) => (
-                  <Link
-                    key={item.label}
-                    to={item.href}
-                    onClick={closeMobileMenu}
-                    className="px-3 py-3 text-base font-medium text-gray-600 hover:bg-gray-50 hover:text-black transition-colors"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
-            </div>
+          {/* Desktop actions */}
+          <div className="ml-auto hidden items-center gap-1 lg:flex">
+            {isBackoffice && (
+              <Link
+                to="/admin"
+                className="mr-2 inline-flex items-center gap-2 border border-line px-3.5 py-2 text-[0.6875rem] font-medium uppercase tracking-[0.12em] text-ink transition-colors hover:border-ink hover:bg-sand"
+              >
+                <LayoutDashboard size={13} strokeWidth={1.75} aria-hidden="true" />
+                Admin
+              </Link>
+            )}
 
-            <div className="mt-6 pt-6 border-t border-gray-100">
-              <h3 className="px-3 text-xs font-semibold uppercase tracking-[0.15em] text-gray-500 mb-3">
-                Help
-              </h3>
-              <nav className="flex flex-col gap-1">
-                {mobileHelpItems.map((item) => (
-                  <Link
-                    key={item.label}
-                    to={item.href}
-                    onClick={closeMobileMenu}
-                    className="px-3 py-3 text-base font-medium text-gray-600 hover:bg-gray-50 hover:text-black transition-colors"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
-            </div>
+            <IconButton label="Search" onClick={openSearch}>
+              <Search size={19} strokeWidth={1.6} />
+            </IconButton>
+
+            <IconButton label="Wishlist" to="/wishlist" badge={wishlistCount}>
+              <Heart size={19} strokeWidth={1.6} />
+            </IconButton>
+
+            {isAuthenticated ? (
+              <IconButton label="My account" to="/account">
+                <User size={19} strokeWidth={1.6} />
+              </IconButton>
+            ) : (
+              <IconButton label="Sign in" to="/login">
+                <User size={19} strokeWidth={1.6} />
+              </IconButton>
+            )}
+
+            <button
+              type="button"
+              onClick={openCart}
+              aria-label={`Bag${cartCount ? `, ${cartCount} item${cartCount === 1 ? '' : 's'}` : ', empty'}`}
+              className="relative -mr-1 p-2 text-ink transition-colors duration-200 hover:text-ink-60"
+            >
+              <ShoppingBag size={19} strokeWidth={1.6} />
+              <CountBubble count={cartCount} />
+            </button>
+          </div>
+
+          {/* Mobile actions */}
+          <div className="ml-auto flex items-center gap-0.5 lg:hidden">
+            <IconButton label="Search" onClick={openSearch}>
+              <Search size={20} strokeWidth={1.6} />
+            </IconButton>
+            <IconButton label="Wishlist" to="/wishlist" badge={wishlistCount}>
+              <Heart size={20} strokeWidth={1.6} />
+            </IconButton>
+            <button
+              type="button"
+              onClick={openCart}
+              aria-label={`Bag${cartCount ? `, ${cartCount} item${cartCount === 1 ? '' : 's'}` : ', empty'}`}
+              className="relative p-2 text-ink"
+            >
+              <ShoppingBag size={20} strokeWidth={1.6} />
+              <CountBubble count={cartCount} />
+            </button>
+            <button
+              type="button"
+              onClick={isMenuOpen ? closeMenu : openMenu}
+              aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={isMenuOpen}
+              aria-controls="mobile-menu"
+              className="-mr-1 p-2 text-ink"
+            >
+              {isMenuOpen ? <X size={21} strokeWidth={1.75} /> : <Menu size={21} strokeWidth={1.75} />}
+            </button>
           </div>
         </div>
       </header>
 
-      {/* Search Modal */}
-      {searchOpen && (
-        <SearchModal onClose={() => setSearchOpen(false)} />
-      )}
-    </>
-  );
-}
+      {/* ---- Mobile drawer ---- */}
+      {isMenuOpen && (
+        <div className="fixed inset-0 z-[60] lg:hidden">
+          <div
+            className="absolute inset-0 bg-ink/40 animate-fade-in"
+            onClick={closeMenu}
+            aria-hidden="true"
+          />
 
-function SearchModal({ onClose }) {
-  const [query, setQuery] = useState('');
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, []);
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Escape') onClose();
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (query.trim()) {
-      onClose();
-      // Navigate to shop with search query
-      window.location.href = `/shop?q=${encodeURIComponent(query.trim())}`;
-    }
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 bg-white flex flex-col"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Search"
-      onKeyDown={handleKeyDown}
-    >
-      <div className="flex h-20 items-center px-5 border-b border-gray-100">
-        <form onSubmit={handleSubmit} className="w-full flex-1 max-w-2xl mx-auto">
-          <label htmlFor="search-input" className="sr-only">Search products</label>
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" strokeWidth={1.7} aria-hidden="true" />
-            <input
-              ref={inputRef}
-              id="search-input"
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search products..."
-              className="w-full h-12 pl-12 pr-16 text-base bg-gray-50 border-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-black"
-              autoComplete="off"
-            />
-            {query && (
+          <div
+            ref={menuPanel}
+            id="mobile-menu"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu"
+            className="absolute inset-y-0 right-0 flex w-[min(22rem,88vw)] flex-col bg-paper animate-slide-left"
+          >
+            <div className="flex h-16 shrink-0 items-center justify-between border-b border-line px-5">
+              <span className="font-display text-lg text-ink">Menu</span>
               <button
                 type="button"
-                onClick={() => setQuery('')}
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                aria-label="Clear search"
+                onClick={closeMenu}
+                aria-label="Close menu"
+                className="-mr-2 p-2 text-ink-40"
               >
-                <X size={18} strokeWidth={2} />
+                <X size={20} strokeWidth={1.75} />
               </button>
-            )}
+            </div>
+
+            <nav className="flex-1 overflow-y-auto" aria-label="Mobile">
+              {/* Shop */}
+              <ul className="border-b border-line py-2">
+                {SHOP_NAV.map((item) => (
+                  <li key={item.label}>
+                    <NavLink
+                      to={item.to}
+                      end={item.end}
+                      onClick={closeMenu}
+                      className={({ isActive }) =>
+                        `flex items-center justify-between px-5 py-3 text-[0.9375rem] transition-colors ${
+                          isActive ? 'bg-sand text-ink' : 'text-ink-80 hover:bg-sand'
+                        }`
+                      }
+                    >
+                      {item.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+
+              {/* Account */}
+              <div className="border-b border-line py-5">
+                <h2 className="t-eyebrow px-5 text-ink-40">Account</h2>
+                <ul className="mt-2">
+                  {isLoading ? (
+                    <li className="px-5 py-3 text-[0.9375rem] text-ink-25">Checking session…</li>
+                  ) : isAuthenticated ? (
+                    <>
+                      <li>
+                        <NavLink
+                          to="/account"
+                          onClick={closeMenu}
+                          className="flex items-center justify-between px-5 py-3 text-[0.9375rem] text-ink-80 hover:bg-sand"
+                        >
+                          Profile
+                          <ChevronRight size={15} strokeWidth={1.75} className="text-ink-25" aria-hidden="true" />
+                        </NavLink>
+                      </li>
+                      <li>
+                        <NavLink
+                          to="/account/orders"
+                          onClick={closeMenu}
+                          className="flex items-center justify-between px-5 py-3 text-[0.9375rem] text-ink-80 hover:bg-sand"
+                        >
+                          Orders
+                          <Package size={15} strokeWidth={1.75} className="text-ink-25" aria-hidden="true" />
+                        </NavLink>
+                      </li>
+                      <li>
+                        <NavLink
+                          to="/wishlist"
+                          onClick={closeMenu}
+                          className="flex items-center justify-between px-5 py-3 text-[0.9375rem] text-ink-80 hover:bg-sand"
+                        >
+                          Wishlist
+                          {wishlistCount > 0 && (
+                            <span className="text-[0.75rem] tabular-nums text-ink-40">
+                              {wishlistCount}
+                            </span>
+                          )}
+                        </NavLink>
+                      </li>
+                      {isBackoffice && (
+                        <li>
+                          <NavLink
+                            to="/admin"
+                            onClick={closeMenu}
+                            className="flex items-center justify-between px-5 py-3 text-[0.9375rem] text-ink-80 hover:bg-sand"
+                          >
+                            Admin
+                            <LayoutDashboard size={15} strokeWidth={1.75} className="text-ink-25" aria-hidden="true" />
+                          </NavLink>
+                        </li>
+                      )}
+                      <li>
+                        <button
+                          type="button"
+                          onClick={handleLogout}
+                          className="flex w-full items-center justify-between px-5 py-3 text-left text-[0.9375rem] text-ink-80 hover:bg-sand"
+                        >
+                          Sign out
+                          <LogOut size={15} strokeWidth={1.75} className="text-ink-25" aria-hidden="true" />
+                        </button>
+                      </li>
+                    </>
+                  ) : (
+                    <>
+                      <li>
+                        <NavLink
+                          to="/login"
+                          onClick={closeMenu}
+                          className="flex items-center justify-between px-5 py-3 text-[0.9375rem] text-ink-80 hover:bg-sand"
+                        >
+                          Sign in
+                        </NavLink>
+                      </li>
+                      <li>
+                        <NavLink
+                          to="/register"
+                          onClick={closeMenu}
+                          className="flex items-center justify-between px-5 py-3 text-[0.9375rem] text-ink-80 hover:bg-sand"
+                        >
+                          Create account
+                        </NavLink>
+                      </li>
+                    </>
+                  )}
+                </ul>
+              </div>
+
+              {/* Help */}
+              <div className="py-5">
+                <h2 className="t-eyebrow px-5 text-ink-40">Help</h2>
+                <ul className="mt-2">
+                  {HELP_LINKS.map((link) => (
+                    <li key={link.to}>
+                      <NavLink
+                        to={link.to}
+                        onClick={closeMenu}
+                        className="flex items-center justify-between px-5 py-3 text-[0.9375rem] text-ink-80 hover:bg-sand"
+                      >
+                        {link.label}
+                        <ChevronRight size={15} strokeWidth={1.75} className="text-ink-25" aria-hidden="true" />
+                      </NavLink>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </nav>
           </div>
-        </form>
-        <button
-          onClick={onClose}
-          className="p-2 ml-4 text-gray-500 hover:text-black transition-colors"
-          aria-label="Close search"
-        >
-          <X size={22} strokeWidth={2} />
-        </button>
-      </div>
+        </div>
+      )}
 
-      <div className="flex-1 overflow-y-auto px-5 py-8">
-        {query.trim() ? (
-          <SearchResults query={query} />
-        ) : (
-          <RecentSearches onClose={onClose} />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RecentSearches({ onClose }) {
-  const recentSearches = ['dresses', 'leather bags', 'linen shirts', 'accessories'];
-
-  return (
-    <div className="max-w-2xl mx-auto">
-      <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-gray-500 mb-4">Recent searches</h3>
-      <div className="flex flex-wrap gap-2">
-        {recentSearches.map((search) => (
-          <button
-            key={search}
-            onClick={() => {
-              window.location.href = `/shop?q=${encodeURIComponent(search)}`;
-              onClose();
-            }}
-            className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-full transition-colors"
-          >
-            {search}
-          </button>
-        ))}
-      </div>
-
-      <h3 className="text-sm font-semibold uppercase tracking-[0.15em] text-gray-500 mt-8 mb-4">Popular categories</h3>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {['Women', 'Men', 'Accessories', 'New Arrivals'].map((cat) => (
-          <Link
-            key={cat}
-            to={cat === 'New Arrivals' ? '/shop?new=true' : `/shop?category=${cat.toLowerCase()}`}
-            onClick={onClose}
-            className="p-4 text-center bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <p className="font-medium text-gray-900">{cat}</p>
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SearchResults({ query }) {
-  // In a real app, this would fetch from an API
-  // For now, we'll show a message
-  return (
-    <div className="max-w-2xl mx-auto text-center py-12">
-      <p className="text-gray-500 mb-4">Showing results for <span className="font-medium text-gray-900">"{query}"</span></p>
-      <p className="text-sm text-gray-400">Search functionality will connect to your backend API</p>
-    </div>
+      <SearchOverlay />
+    </>
   );
 }

@@ -1,182 +1,321 @@
-import { Link } from 'react-router-dom';
-import { ChevronLeft, Package, Truck, MapPin, CreditCard, Clock, CheckCircle, Circle, RotateCcw } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link, useParams, useNavigate } from 'react-router-dom';
+import {
+  ChevronLeft,
+  Package,
+  MapPin,
+  CreditCard,
+  Check,
+  Circle,
+  RotateCcw,
+  LifeBuoy,
+} from 'lucide-react';
+import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
 import { formatPrice } from '../utils/currency';
+import { getProductBySlug } from '../data/products';
+import {
+  fetchOrderById,
+  STATUS_META,
+  STATUS_TONE_CLASS,
+  formatOrderDate,
+  formatOrderDateTime,
+  orderItemCount,
+  orderMilestones,
+} from '../data/customerOrders';
 
-const mockOrder = {
-  id: 'ORD-2026-001',
-  date: 'Sep 15, 2026',
-  status: 'Delivered',
-  statusHistory: [
-    { status: 'Order Placed', date: 'Sep 15, 2026', time: '10:30 AM', completed: true },
-    { status: 'Processing', date: 'Sep 15, 2026', time: '2:15 PM', completed: true },
-    { status: 'Shipped', date: 'Sep 16, 2026', time: '9:00 AM', completed: true },
-    { status: 'Out for Delivery', date: 'Sep 17, 2026', time: '8:30 AM', completed: true },
-    { status: 'Delivered', date: 'Sep 17, 2026', time: '2:45 PM', completed: true },
-  ],
-  items: [
-    { name: 'Classic Linen Shirt', size: 'M', color: 'White', quantity: 2, price: 1850, image: 'https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?auto=format&fit=crop&w=200&q=80' },
-    { name: 'Minimalist Leather Belt', size: '90', color: 'Black', quantity: 1, price: 650, image: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?auto=format&fit=crop&w=200&q=80' },
-  ],
-  shipping: {
-    name: 'Bira User',
-    phone: '+251 911 234 567',
-    address: 'Bole Sub-city, Kebele 12, House 45',
-    city: 'Addis Ababa',
-    region: 'Addis Ababa',
-  },
-  billing: {
-    name: 'Bira User',
-    email: 'bira@example.com',
-    phone: '+251 911 234 567',
-  },
-  payment: {
-    method: 'Telebirr',
-    last4: '1234',
-  },
-  subtotal: 4350,
-  delivery: 0,
-  tax: 0,
-  total: 4350,
-  trackingNumber: 'ETBIR123456789',
-  estimatedDelivery: 'Sep 17, 2026',
-};
+function Panel({ title, icon: Icon, children }) {
+  return (
+    <section className="border border-line p-6">
+      {title && (
+        <h2 className="t-eyebrow flex items-center gap-2.5 text-ink-40">
+          {Icon && <Icon size={15} strokeWidth={1.6} aria-hidden="true" />}
+          {title}
+        </h2>
+      )}
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
 
-export default function OrderDetails() {
-  const order = mockOrder;
+function OrderThumb({ slug }) {
+  const product = getProductBySlug(slug);
+  const image = product?.images?.[0] ?? product?.image;
+  if (!image) return null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-100 bg-white">
-        <div className="mx-auto max-w-7xl px-5 py-6 lg:px-8 flex items-center gap-4">
-          <Link to="/account/orders" className="p-2 text-gray-400 hover:text-black rounded-full hover:bg-gray-100 transition-colors">
-            <ChevronLeft size={22} strokeWidth={2} />
+    <img
+      src={image}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      className="size-full object-cover"
+    />
+  );
+}
+
+export default function OrderDetails() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+
+  /*
+   * The two states this can be in are "still resolving" (undefined) and
+   * "resolved" (an order or null), so an in-flight request needs its own flag
+   * rather than reusing the order value.
+   */
+  const [request, setRequest] = useState({ id, order: undefined, isLoading: true });
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchOrderById(id).then((order) => {
+      if (!cancelled) setRequest({ id, order, isLoading: false });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  // Ignore a response that arrived after the shopper moved to another order.
+  const order = request.id === id ? request.order : undefined;
+  const isLoading = request.id === id && request.isLoading;
+
+  if (isLoading) {
+    return (
+      <div className="shell py-20">
+        <p className="t-body" role="status">
+          Loading order…
+        </p>
+      </div>
+    );
+  }
+
+  if (order === null) {
+    return (
+      <div className="shell section-y">
+        <EmptyState
+          icon={Package}
+          title="Order not found"
+          description={`We could not find an order with the reference ${id}.`}
+          actionLabel="View all orders"
+          onAction={() => navigate('/account/orders')}
+        />
+      </div>
+    );
+  }
+
+  const meta = STATUS_META[order.status];
+  const milestones = orderMilestones(order);
+  const count = orderItemCount(order);
+  const isFinal = ['delivered', 'cancelled', 'returned'].includes(order.status);
+
+  return (
+    <>
+      <header className="border-b border-line">
+        <div className="shell py-8 lg:py-12">
+          <Link
+            to="/account/orders"
+            className="link-underline inline-flex items-center gap-1.5 text-[0.8125rem] text-ink-60"
+          >
+            <ChevronLeft size={14} strokeWidth={2} aria-hidden="true" />
+            All orders
           </Link>
-          <div>
-            <h1 className="text-2xl font-medium tracking-tight">Order Details</h1>
-            <p className="text-sm text-gray-500">{order.id} • {order.date}</p>
+
+          <div className="mt-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+            <div>
+              <p className="t-eyebrow text-ink-40">Order {order.id}</p>
+              <h1 className="t-page mt-3">Order details</h1>
+              <p className="t-body mt-2">
+                Placed {formatOrderDateTime(order.placedAt)}
+              </p>
+            </div>
+
+            <span
+              className={`px-3 py-1.5 text-[0.6875rem] font-medium uppercase tracking-[0.1em] ${STATUS_TONE_CLASS[meta.tone]}`}
+            >
+              {meta.label}
+            </span>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* Order Items & Summary */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Status Timeline */}
-            <section className="bg-white rounded-xl border border-gray-100 p-6">
-              <h2 className="text-lg font-medium mb-6">Order Status</h2>
-              <div className="relative">
-                <div className="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-100" aria-hidden="true" />
-                <div className="space-y-6">
-                  {order.statusHistory.map((step, idx) => (
-                    <div key={step.status} className="relative flex gap-4">
-                      <div className="relative flex-shrink-0">
-                        <div className={`h-10 w-10 rounded-full flex items-center justify-center border-2 transition-colors ${
-                          step.completed ? 'bg-black border-black' : 'bg-white border-gray-200'
-                        }`}>
-                          {step.completed && <CheckCircle size={16} strokeWidth={3} className="text-white" />}
-                          {!step.completed && <Circle size={16} strokeWidth={3} className="text-gray-300" />}
-                        </div>
-                      </div>
-                      <div className="flex-1 pt-1">
-                        <p className={`font-medium ${step.completed ? 'text-gray-900' : 'text-gray-500'}`}>{step.status}</p>
-                        <p className="text-sm text-gray-500">{step.date} at {step.time}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </section>
-
-            {/* Order Items */}
-            <section className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100">
-                <h2 className="text-lg font-medium">Order Items</h2>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {order.items.map((item, idx) => (
-                  <Link key={idx} to={`/product/${item.name.toLowerCase().replace(/\s+/g, '-')}`} className="flex items-center gap-4 p-6 hover:bg-gray-50 transition-colors">
-                    <img src={item.image} alt={item.name} className="h-20 w-14 object-cover rounded-lg" />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900">{item.name}</p>
-                      <p className="text-sm text-gray-500">Size: {item.size} • Color: {item.color}</p>
-                      <p className="text-sm text-gray-500">Qty: {item.quantity}</p>
-                    </div>
-                    <span className="font-semibold text-gray-900">{formatPrice(item.price * item.quantity)}</span>
-                  </Link>
-                ))}
-              </div>
-            </section>
-
-            {/* Order Summary */}
-            <section className="bg-white rounded-xl border border-gray-100 p-6">
-              <h2 className="text-lg font-medium mb-6">Order Summary</h2>
-              <dl className="space-y-3 text-sm">
-                <div className="flex justify-between"><dt className="text-gray-500">Subtotal</dt><dd className="font-medium">{formatPrice(order.subtotal)}</dd></div>
-                <div className="flex justify-between"><dt className="text-gray-500">Delivery</dt><dd className="font-medium">{order.delivery === 0 ? 'Free' : formatPrice(order.delivery)}</dd></div>
-                <div className="flex justify-between"><dt className="text-gray-500">Tax</dt><dd className="font-medium">{formatPrice(order.tax)}</dd></div>
-                <div className="flex justify-between border-t border-gray-100 pt-3 font-semibold text-base"><dt>Total</dt><dd>{formatPrice(order.total)}</dd></div>
-              </dl>
-            </section>
-          </div>
-
-          {/* Shipping, Payment, Actions */}
-          <div className="space-y-6">
-            {/* Shipping Address */}
-            <section className="bg-white rounded-xl border border-gray-100 p-6">
-              <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
-                <MapPin size={20} strokeWidth={1.7} />
-                Shipping Address
+      <div className="shell py-10 lg:py-14">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-10">
+          <div className="min-w-0 space-y-8">
+            {/* Progress */}
+            <section aria-labelledby="progress-heading">
+              <h2 id="progress-heading" className="sr-only">
+                Order progress
               </h2>
-              <address className="text-gray-600 not-italic space-y-1">
-                <p className="font-medium">{order.shipping.name}</p>
-                <p>{order.shipping.phone}</p>
-                <p>{order.shipping.address}</p>
-                <p>{order.shipping.city}, {order.shipping.region}</p>
-              </address>
-              {order.trackingNumber && (
-                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-500">Tracking Number</p>
-                  <p className="font-mono font-medium text-gray-900">{order.trackingNumber}</p>
-                  <p className="text-sm text-gray-500 mt-1">Estimated delivery: {order.estimatedDelivery}</p>
+
+              {isFinal && order.status === 'delivered' ? (
+                <div className="flex items-start gap-3 border border-success/25 bg-success-soft px-5 py-4">
+                  <Check size={16} strokeWidth={2} className="mt-0.5 shrink-0 text-success" aria-hidden="true" />
+                  <p className="text-[0.875rem] leading-relaxed text-success">
+                    Delivered {formatOrderDate(order.estimatedDelivery)}. Returns are open for 14 days
+                    from delivery.
+                  </p>
                 </div>
+              ) : (
+                <ol className="flex flex-col gap-0">
+                  {milestones.map((step, index) => (
+                    <li key={step.status} className="flex gap-4">
+                      <div className="flex flex-col items-center">
+                        <span
+                          className={`flex size-8 shrink-0 items-center justify-center rounded-full border ${
+                            step.done ? 'border-ink bg-ink text-paper' : 'border-line text-ink-25'
+                          }`}
+                          aria-hidden="true"
+                        >
+                          {step.done ? (
+                            <Check size={14} strokeWidth={2.5} />
+                          ) : (
+                            <Circle size={8} strokeWidth={2} />
+                          )}
+                        </span>
+                        {index < milestones.length - 1 && (
+                          <span
+                            className={`w-px flex-1 ${step.done ? 'bg-ink' : 'bg-line'}`}
+                            aria-hidden="true"
+                          />
+                        )}
+                      </div>
+
+                      <div className="pb-7">
+                        <p className={`text-[0.875rem] ${step.done ? 'text-ink' : 'text-ink-40'}`}>
+                          {step.status}
+                        </p>
+                        {step.at && (
+                          <p className="t-caption mt-0.5">{formatOrderDateTime(step.at)}</p>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ol>
               )}
             </section>
 
-            {/* Billing Address */}
-            <section className="bg-white rounded-xl border border-gray-100 p-6">
-              <h2 className="text-lg font-medium mb-4 flex items-center gap-2">
-                <CreditCard size={20} strokeWidth={1.7} />
-                Billing Information
+            {/* Items */}
+            <section aria-labelledby="items-heading">
+              <h2 id="items-heading" className="t-eyebrow text-ink-40">
+                Items · {count} {count === 1 ? 'piece' : 'pieces'}
               </h2>
-              <address className="text-gray-600 not-italic space-y-1">
-                <p className="font-medium">{order.billing.name}</p>
-                <p>{order.billing.email}</p>
-                <p>{order.billing.phone}</p>
-              </address>
-              <div className="mt-4">
-                <p className="text-sm text-gray-500">Payment Method</p>
-                <p className="font-medium">{order.payment.method} ending in {order.payment.last4}</p>
-              </div>
+
+              <ul className="mt-4 flex flex-col divide-y divide-line border-y border-line">
+                {order.items.map((item) => (
+                  <li key={`${item.slug}-${item.size}-${item.color}`} className="py-4">
+                    <Link to={`/product/${item.slug}`} className="group flex items-center gap-4">
+                      <span className="block h-24 w-20 shrink-0 overflow-hidden bg-sand">
+                        <OrderThumb slug={item.slug} name={item.name} />
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[0.9375rem] text-ink group-hover:text-ink-60">
+                          {item.name}
+                        </span>
+                        <span className="t-caption mt-1 block">
+                          {[item.color, item.size].filter(Boolean).join(' · ')}
+                        </span>
+                        <span className="t-caption mt-0.5 block">
+                          {formatPrice(item.price)} × {item.quantity}
+                        </span>
+                      </span>
+
+                      <span className="shrink-0 text-[0.9375rem] tabular-nums text-ink">
+                        {formatPrice(item.price * item.quantity)}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </section>
 
-            {/* Actions */}
-            <section className="bg-white rounded-xl border border-gray-100 p-6 space-y-3">
-              <Link to="/returns" className="block w-full h-11 flex items-center justify-center gap-2 border border-gray-200 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 transition-colors">
-                <RotateCcw size={18} strokeWidth={1.7} />
-                Return Items
-              </Link>
-              <Link to="/shop" className="block w-full h-11 flex items-center justify-center gap-2 border border-gray-200 text-sm font-medium text-gray-700 rounded-md hover:bg-gray-50 transition-colors">
-                <Package size={18} strokeWidth={1.7} />
-                Buy Again
-              </Link>
-              <a href="mailto:support@birascollections.com" className="block w-full h-11 flex items-center justify-center gap-2 text-sm font-medium text-gray-600 hover:text-black">
-                Contact Support
-              </a>
-            </section>
+            {/* Totals */}
+            <Panel title="Totals">
+              <dl className="flex flex-col gap-3 text-[0.875rem]">
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-ink-60">Subtotal</dt>
+                  <dd className="tabular-nums text-ink">{formatPrice(order.subtotal)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-ink-60">Delivery</dt>
+                  <dd className="tabular-nums text-ink">
+                    {order.delivery === 0 ? 'Free' : formatPrice(order.delivery)}
+                  </dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-4 border-t border-line pt-3">
+                  <dt className="font-medium text-ink">Total</dt>
+                  <dd className="text-[1.0625rem] tabular-nums text-ink">
+                    {formatPrice(order.total)}
+                  </dd>
+                </div>
+              </dl>
+            </Panel>
           </div>
+
+          {/* Sidebar */}
+          <aside className="space-y-6">
+            <Panel title="Delivering to" icon={MapPin}>
+              <address className="not-italic text-[0.875rem] leading-relaxed text-ink-60">
+                <span className="block text-ink">{order.shipping.name}</span>
+                <span className="block">{order.shipping.phone}</span>
+                <span className="block">{order.shipping.address}</span>
+                <span className="block">
+                  {order.shipping.city}, {order.shipping.region}
+                </span>
+              </address>
+            </Panel>
+
+            <Panel title="Payment" icon={CreditCard}>
+              <p className="text-[0.875rem] text-ink">{order.payment.method}</p>
+              {order.payment.reference && (
+                <p className="t-caption mt-1 break-all">Reference {order.payment.reference}</p>
+              )}
+            </Panel>
+
+            {order.trackingNumber && (
+              <Panel title="Tracking">
+                <p className="break-all text-[0.875rem] text-ink">{order.trackingNumber}</p>
+                <p className="t-caption mt-1.5">
+                  Estimated {formatOrderDate(order.estimatedDelivery)}
+                </p>
+              </Panel>
+            )}
+
+            <div className="flex flex-col gap-3">
+              {order.status === 'delivered' && (
+                <Button
+                  variant="secondary"
+                  fullWidth
+                  onClick={() => navigate('/returns')}
+                  iconLeft={<RotateCcw size={15} strokeWidth={1.75} aria-hidden="true" />}
+                >
+                  Start a return
+                </Button>
+              )}
+
+              <Button
+                variant="secondary"
+                fullWidth
+                onClick={() => navigate('/shop')}
+                iconLeft={<Package size={15} strokeWidth={1.75} aria-hidden="true" />}
+              >
+                Continue shopping
+              </Button>
+
+              <Button
+                variant="tertiary"
+                fullWidth
+                onClick={() => navigate('/contact')}
+                iconLeft={<LifeBuoy size={15} strokeWidth={1.75} aria-hidden="true" />}
+              >
+                Get help
+              </Button>
+            </div>
+          </aside>
         </div>
-      </main>
-    </div>
+      </div>
+    </>
   );
 }

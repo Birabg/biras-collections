@@ -1,84 +1,110 @@
 import { useState } from 'react';
-import { useToast } from '../../components/ui/Toast';
+import { Link } from 'react-router-dom';
+import { Check, ArrowRight } from 'lucide-react';
 
+/**
+ * Newsletter sign-up.
+ *
+ * There is no mailing-list service, so this validates the address and then says
+ * plainly that nothing was stored. Showing a fake "Subscribed!" here would be
+ * the one thing a shopper would actually be misled by.
+ */
 export default function Newsletter() {
   const [email, setEmail] = useState('');
-  const [status, setStatus] = useState('idle'); // idle, submitting, success, error
-  const toast = useToast();
+  const [error, setError] = useState('');
+  const [submitted, setSubmitted] = useState(false);
 
-  const validateEmail = (email) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  };
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!validateEmail(email)) {
-      toast.error('Invalid email', { message: 'Please enter a valid email address' });
+    if (!valid) {
+      setError('Enter a valid email address.');
       return;
     }
 
-    setStatus('submitting');
-
-    // Simulate API call
-    setTimeout(() => {
-      setStatus('success');
-      setEmail('');
-      toast.success('Subscribed!', { message: 'Thanks for joining our community' });
-      setTimeout(() => setStatus('idle'), 3000);
-    }, 1000);
+    setError('');
+    setSubmitted(true);
+    setEmail('');
   };
 
   return (
-    <section className="border-t border-gray-100 px-5 py-20 text-center" aria-labelledby="newsletter-heading">
-      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-gray-500">
-        Stay in the loop
-      </p>
+    <section className="border-t border-line bg-ink text-paper" aria-labelledby="newsletter-heading">
+      <div className="shell py-16 lg:py-24">
+        <div className="grid gap-10 lg:grid-cols-2 lg:items-end lg:gap-20">
+          <div>
+            <p className="t-eyebrow text-paper/45">Stay in the loop</p>
+            <h2 id="newsletter-heading" className="t-section mt-4 max-w-md">
+              New collections, restocks and private sales
+            </h2>
+          </div>
 
-      <h2 id="newsletter-heading" className="mt-3 text-3xl font-medium tracking-tight">
-        Join the Bira's Collections community
-      </h2>
+          <div className="max-w-md lg:ml-auto lg:w-full">
+            {submitted ? (
+              <div
+                className="flex items-start gap-3 border border-paper/20 bg-paper/5 px-5 py-4"
+                role="status"
+                aria-live="polite"
+              >
+                <Check size={16} strokeWidth={2} className="mt-0.5 shrink-0" aria-hidden="true" />
+                <div>
+                  <p className="text-[0.875rem] font-medium">Address accepted</p>
+                  <p className="mt-1 text-[0.8125rem] leading-relaxed text-paper/70">
+                    Our mailing list is not connected yet, so nothing was stored. We&rsquo;ll be
+                    honest about that rather than pretend you are subscribed.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <form onSubmit={handleSubmit} noValidate>
+                  <label htmlFor="newsletter-email" className="sr-only">
+                    Email address
+                  </label>
 
-      <p className="mx-auto mt-4 max-w-md text-sm leading-6 text-gray-500">
-        Get updates about new collections, exclusive offers, and special
-        releases.
-      </p>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <input
+                      id="newsletter-email"
+                      type="email"
+                      value={email}
+                      onChange={(event) => {
+                        setEmail(event.target.value);
+                        if (error) setError('');
+                      }}
+                      placeholder="Email address"
+                      aria-invalid={error ? 'true' : undefined}
+                      aria-describedby={error ? 'newsletter-error' : undefined}
+                      className="h-13 flex-1 border-b border-paper/30 bg-transparent px-1 text-[0.9375rem] text-paper outline-none transition-colors placeholder:text-paper/35 focus:border-paper"
+                    />
 
-      <form onSubmit={handleSubmit} className="mx-auto mt-7 flex max-w-md flex-col gap-3 sm:flex-row">
-        <label htmlFor="newsletter-email" className="sr-only">Email address</label>
-        <input
-          id="newsletter-email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Your email address"
-          disabled={status === 'submitting' || status === 'success'}
-          className="h-12 flex-1 border border-gray-200 px-4 text-sm outline-none focus:border-black disabled:bg-gray-50 disabled:cursor-not-allowed"
-          aria-describedby="newsletter-hint"
-        />
-        <button
-          type="submit"
-          disabled={status === 'submitting' || status === 'success' || !email}
-          className="h-12 bg-black px-7 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {status === 'submitting' ? (
-            <span className="flex items-center gap-2">
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Subscribing...
-            </span>
-          ) : status === 'success' ? (
-            'Subscribed!'
-          ) : (
-            'Subscribe'
-          )}
-        </button>
-      </form>
+                    <button
+                      type="submit"
+                      className="inline-flex h-13 shrink-0 items-center justify-center gap-2 rounded-[2px] bg-paper px-8 text-[0.75rem] font-medium uppercase tracking-[0.14em] text-ink transition-colors duration-200 hover:bg-paper/90"
+                    >
+                      Subscribe
+                      <ArrowRight size={15} strokeWidth={2} aria-hidden="true" />
+                    </button>
+                  </div>
 
-      <p id="newsletter-hint" className="mt-3 text-xs text-gray-400">
-        By subscribing, you agree to our <a href="/privacy" className="underline hover:text-gray-600">Privacy Policy</a>.
-      </p>
+                  {error && (
+                    <p id="newsletter-error" role="alert" className="mt-2 text-[0.8125rem] text-paper">
+                      {error}
+                    </p>
+                  )}
+                </form>
+
+                <p className="mt-4 text-[0.75rem] text-paper/45">
+                  By subscribing you agree to our{' '}
+                  <Link to="/privacy" className="link-underline text-paper/70 hover:text-paper">
+                    privacy policy
+                  </Link>
+                  . Unsubscribe at any time.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }

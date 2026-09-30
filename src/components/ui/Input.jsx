@@ -1,45 +1,70 @@
 import { forwardRef } from 'react';
+import { controlClass, fieldErrorText, fieldHintText, fieldLabel, idFromLabel } from './fieldStyles';
 
+/*
+ * Input — labelled, error-aware text field.
+ * Supports an optional leading `icon`, which is rendered (not spread onto the DOM).
+ */
 const Input = forwardRef(
-  ({ label, error, hint, className = '', id, ...props }, ref) => {
-    const inputId = id || label?.toLowerCase().replace(/\s+/g, '-');
+  ({ label, error, hint, id, name, className = '', icon = null, required = false, ...props }, ref) => {
+    const inputId = idFromLabel(label, name || id);
+    const describedBy = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined;
 
     return (
       <div className="w-full">
         {label && (
-          <label htmlFor={inputId} className="block text-sm font-medium text-gray-900 mb-1.5">
+          <label htmlFor={inputId} className={fieldLabel}>
             {label}
+            {required && (
+              <span className="ml-1 text-error" aria-hidden="true">
+                *
+              </span>
+            )}
           </label>
         )}
-        <input
-          ref={ref}
-          id={inputId}
-          className={`
-            w-full h-11 px-4 text-sm border rounded-md
-            bg-white text-gray-900 placeholder:text-gray-400
-            transition-colors duration-150
-            focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent
-            disabled:bg-gray-50 disabled:cursor-not-allowed
-            ${error ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 hover:border-gray-300'}
-            ${className}
-          `}
-          aria-invalid={error ? 'true' : 'false'}
-          aria-describedby={error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined}
-          {...props}
-        />
-        {error && (
-          <p id={`${inputId}-error`} className="mt-1.5 text-sm text-red-600" role="alert">
+
+        <div className="relative">
+          {icon && (
+            <span
+              className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink-25"
+              aria-hidden="true"
+            >
+              {icon}
+            </span>
+          )}
+
+          <input
+            ref={ref}
+            id={inputId}
+            name={name}
+            required={required}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={describedBy}
+            className={controlClass(Boolean(error), [
+              'h-12',
+              icon ? 'pl-11' : '',
+              className,
+            ]
+              .filter(Boolean)
+              .join(' '))}
+            {...props}
+          />
+        </div>
+
+        {error ? (
+          <p id={`${inputId}-error`} className={fieldErrorText} role="alert">
             {error}
           </p>
-        )}
-        {hint && !error && (
-          <p id={`${inputId}-hint`} className="mt-1.5 text-sm text-gray-500">
-            {hint}
-          </p>
+        ) : (
+          hint && (
+            <p id={`${inputId}-hint`} className={fieldHintText}>
+              {hint}
+            </p>
+          )
         )}
       </div>
     );
-  }
+  },
 );
 
 Input.displayName = 'Input';

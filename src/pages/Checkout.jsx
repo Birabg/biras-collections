@@ -1,329 +1,645 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Truck, CreditCard, Check, MapPin, User, Mail, Phone, ChevronRight } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  User,
+  Truck,
+  CreditCard,
+  Check,
+  ChevronRight,
+  ShoppingBag,
+  Info,
+} from 'lucide-react';
 import { formatPrice } from '../utils/currency';
 import { useCart } from '../context/CartContext';
-import { useToast } from '../components/ui/Toast';
+import { useAuth } from '../auth/AuthContext';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
-import { getProductById } from '../data/products';
+import Select from '../components/ui/Select';
+import EmptyState from '../components/ui/EmptyState';
+import DemoBackendNotice from '../components/auth/DemoBackendNotice';
 
-const steps = [
-  { id: 'customer', label: 'Information', icon: User },
+const STEPS = [
+  { id: 'contact', label: 'Contact', icon: User },
   { id: 'delivery', label: 'Delivery', icon: Truck },
   { id: 'payment', label: 'Payment', icon: CreditCard },
-  { id: 'review', label: 'Review', icon: Check },
 ];
 
-const paymentMethods = [
-  { id: 'telebirr', name: 'Telebirr', icon: '📱', description: 'Pay with your Telebirr account' },
-  { id: 'chapa', name: 'Chapa', icon: '💳', description: 'Card, Bank, or Mobile Money' },
-  { id: 'cbe', name: 'CBE Birr', icon: '🏦', description: 'Commercial Bank of Ethiopia' },
-  { id: 'cod', name: 'Cash on Delivery', icon: '💵', description: 'Pay when you receive your order' },
+const PAYMENT_METHODS = [
+  { id: 'telebirr', name: 'Telebirr', description: 'Pay from your Telebirr account' },
+  { id: 'cbe-birr', name: 'CBE Birr', description: 'Commercial Bank of Ethiopia' },
+  { id: 'chapa', name: 'Chapa', description: 'Card, bank or mobile money' },
+  { id: 'cash', name: 'Cash on delivery', description: 'Pay when your order arrives' },
 ];
 
-const ethiopianRegions = [
-  'Addis Ababa', 'Afar', 'Amhara', 'Benishangul-Gumuz', 'Dire Dawa', 'Gambela',
-  'Harari', 'Oromia', 'Sidama', 'Somali', 'South West Ethiopia Peoples', 'Tigray'
+const ETHIOPIAN_REGIONS = [
+  'Addis Ababa',
+  'Afar',
+  'Amhara',
+  'Benishangul-Gumuz',
+  'Dire Dawa',
+  'Gambela',
+  'Harari',
+  'Oromia',
+  'Sidama',
+  'Somali',
+  'South West Ethiopia Peoples',
+  'Tigray',
 ];
 
-const addisSubCities = [
-  'Addis Ketema', 'Akaky Kaliti', 'Arada', 'Bole', 'Gullele', 'Kirkos', 'Kolfe Keranio', 'Lideta', 'Nifas Silk-Lafto', 'Yeka'
+const ADDIS_SUB_CITIES = [
+  'Addis Ketema',
+  'Akaky Kaliti',
+  'Arada',
+  'Bole',
+  'Gullele',
+  'Kirkos',
+  'Kolfe Keranio',
+  'Lideta',
+  'Nifas Silk-Lafto',
+  'Yeka',
 ];
+
+const FREE_DELIVERY_THRESHOLD = 5000;
+const DELIVERY_FEE = 150;
+
+const EMPTY_FORM = {
+  firstName: '',
+  lastName: '',
+  email: '',
+  phone: '',
+  region: '',
+  city: '',
+  subCity: '',
+  address: '',
+  deliveryNotes: '',
+  paymentMethod: 'telebirr',
+};
+
+/* -------------------------------------------------------------- validation */
+
+function validate(form) {
+  const errors = {};
+
+  if (!form.firstName.trim()) errors.firstName = 'First name is required';
+  if (!form.lastName.trim()) errors.lastName = 'Last name is required';
+
+  if (!form.email.trim()) {
+    errors.email = 'Email is required';
+  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+    errors.email = 'Enter a valid email address';
+  }
+
+  const digits = form.phone.replace(/\D/g, '');
+  if (!form.phone.trim()) {
+    errors.phone = 'Phone number is required';
+  } else if (digits.length < 9) {
+    errors.phone = 'Enter a valid phone number';
+  }
+
+  if (!form.region) errors.region = 'Select a region';
+  if (!form.city.trim()) errors.city = 'City is required';
+  if (!form.subCity.trim()) errors.subCity = 'Sub-city is required';
+  if (!form.address.trim()) errors.address = 'Street address is required';
+  if (!form.paymentMethod) errors.paymentMethod = 'Select a payment method';
+
+  return errors;
+}
+
+/* -------------------------------------------------------------------- steps */
+
+function ContactStep({ form, errors, onChange, onNext }) {
+  return (
+    <fieldset className="border-0 p-0">
+      <legend className="t-section !text-xl">Contact details</legend>
+      <p className="t-body mt-2 text-[0.875rem]">
+        We use these to confirm the order and arrange delivery.
+      </p>
+
+      <div className="mt-6 grid gap-5 sm:grid-cols-2">
+        <Input
+          label="First name"
+          name="firstName"
+          value={form.firstName}
+          onChange={onChange}
+          error={errors.firstName}
+          autoComplete="given-name"
+          required
+        />
+        <Input
+          label="Last name"
+          name="lastName"
+          value={form.lastName}
+          onChange={onChange}
+          error={errors.lastName}
+          autoComplete="family-name"
+          required
+        />
+      </div>
+
+      <div className="mt-5 grid gap-5 sm:grid-cols-2">
+        <Input
+          label="Email address"
+          name="email"
+          type="email"
+          value={form.email}
+          onChange={onChange}
+          error={errors.email}
+          autoComplete="email"
+          required
+        />
+        <Input
+          label="Phone number"
+          name="phone"
+          type="tel"
+          value={form.phone}
+          onChange={onChange}
+          error={errors.phone}
+          autoComplete="tel"
+          placeholder="+251 9XX XXX XXX"
+          required
+        />
+      </div>
+
+      <div className="mt-8 flex justify-end">
+        <Button
+          type="button"
+          onClick={onNext}
+          iconRight={<ChevronRight size={15} strokeWidth={2} aria-hidden="true" />}
+        >
+          Continue to delivery
+        </Button>
+      </div>
+    </fieldset>
+  );
+}
+
+function DeliveryStep({ form, errors, onChange, onNext, onBack }) {
+  const isAddis = form.region === 'Addis Ababa';
+
+  return (
+    <fieldset className="border-0 p-0">
+      <legend className="t-section !text-xl">Delivery address</legend>
+      <p className="t-body mt-2 text-[0.875rem]">
+        We deliver across Ethiopia. Free over {formatPrice(FREE_DELIVERY_THRESHOLD)}, otherwise{' '}
+        {formatPrice(DELIVERY_FEE)} flat.
+      </p>
+
+      <div className="mt-6 grid gap-5 sm:grid-cols-2">
+        <Select
+          label="Region"
+          name="region"
+          value={form.region}
+          onChange={onChange}
+          error={errors.region}
+          required
+        >
+          <option value="">Select a region</option>
+          {ETHIOPIAN_REGIONS.map((region) => (
+            <option key={region} value={region}>
+              {region}
+            </option>
+          ))}
+        </Select>
+
+        {isAddis ? (
+          <Select
+            label="Sub-city"
+            name="subCity"
+            value={form.subCity}
+            onChange={onChange}
+            error={errors.subCity}
+            required
+          >
+            <option value="">Select a sub-city</option>
+            {ADDIS_SUB_CITIES.map((subCity) => (
+              <option key={subCity} value={subCity}>
+                {subCity}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <Input
+            label="Sub-city / town"
+            name="subCity"
+            value={form.subCity}
+            onChange={onChange}
+            error={errors.subCity}
+            required
+          />
+        )}
+
+        <Input
+          label="City"
+          name="city"
+          value={form.city}
+          onChange={onChange}
+          error={errors.city}
+          autoComplete="address-level2"
+          required
+        />
+
+        <Input
+          label="Phone for the courier"
+          name="phone"
+          type="tel"
+          value={form.phone}
+          onChange={onChange}
+          error={errors.phone}
+          autoComplete="tel"
+          required
+        />
+      </div>
+
+      <div className="mt-5">
+        <Input
+          label="Street address"
+          name="address"
+          value={form.address}
+          onChange={onChange}
+          error={errors.address}
+          placeholder="Building, floor, house number"
+          autoComplete="street-address"
+          required
+        />
+      </div>
+
+      <div className="mt-5">
+        <Input
+          label="Delivery notes"
+          name="deliveryNotes"
+          value={form.deliveryNotes}
+          onChange={onChange}
+          hint="Optional — anything the courier should know"
+        />
+      </div>
+
+      <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+        <Button type="button" variant="secondary" onClick={onBack}>
+          Back
+        </Button>
+        <Button
+          type="button"
+          onClick={onNext}
+          iconRight={<ChevronRight size={15} strokeWidth={2} aria-hidden="true" />}
+        >
+          Continue to payment
+        </Button>
+      </div>
+    </fieldset>
+  );
+}
+
+function PaymentStep({ form, errors, onChange, onBack, onSubmit, isSubmitting, total }) {
+  return (
+    <form
+      onSubmit={onSubmit}
+      noValidate
+      className="border-0 p-0"
+      aria-labelledby="payment-step-heading"
+    >
+      <h2 id="payment-step-heading" className="t-section !text-xl">
+        Payment
+      </h2>
+      <p className="t-body mt-2 text-[0.875rem]">
+        Choose how you would like to pay. Nothing is charged on this site.
+      </p>
+
+      {errors.paymentMethod && (
+        <p className="mt-4 text-[0.8125rem] text-error" role="alert">
+          {errors.paymentMethod}
+        </p>
+      )}
+
+      <fieldset className="mt-6 border-0 p-0">
+        <legend className="sr-only">Payment method</legend>
+        <div className="flex flex-col gap-3">
+          {PAYMENT_METHODS.map((method) => (
+            <label
+              key={method.id}
+              className={`flex cursor-pointer items-start gap-4 border p-4 transition-colors ${
+                form.paymentMethod === method.id
+                  ? 'border-ink bg-sand'
+                  : 'border-line hover:border-ink-40'
+              }`}
+            >
+              <input
+                type="radio"
+                name="paymentMethod"
+                value={method.id}
+                checked={form.paymentMethod === method.id}
+                onChange={onChange}
+                className="mt-1 size-4 shrink-0 accent-ink"
+              />
+              <span className="min-w-0">
+                <span className="block text-[0.9375rem] font-medium text-ink">
+                  {method.name}
+                </span>
+                <span className="mt-0.5 block text-[0.8125rem] text-ink-40">
+                  {method.description}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+        <Button type="button" variant="secondary" onClick={onBack}>
+          Back
+        </Button>
+        <Button
+          type="submit"
+          loading={isSubmitting}
+          iconLeft={isSubmitting ? undefined : <Check size={15} strokeWidth={2} aria-hidden="true" />}
+        >
+          Review order · {formatPrice(total)}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/* --------------------------------------------------------------------- page */
 
 export default function Checkout() {
   const { cart, getSubtotal, clearCart } = useCart();
-  const { toast } = useToast();
+  const { user, isDemoBackend } = useAuth();
   const navigate = useNavigate();
 
-  const [currentStep, setCurrentStep] = useState(0);
-  const [formData, setFormData] = useState({
-    // Customer Info
-    firstName: '',
-    lastName: '',
-    email: '',
-    phone: '',
-    // Delivery Info
-    region: '',
-    city: '',
-    subCity: '',
-    address: '',
-    deliveryNotes: '',
-    // Payment
-    paymentMethod: 'telebirr',
-  });
+  const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const formRef = useRef(null);
+  const stepHeadingRef = useRef(null);
+
   const subtotal = getSubtotal();
-  const deliveryFee = subtotal >= 5000 ? 0 : 150;
+  const deliveryFee = subtotal >= FREE_DELIVERY_THRESHOLD ? 0 : DELIVERY_FEE;
   const total = subtotal + deliveryFee;
+
+  // Signed-in shoppers should not retype what we already know. Seeding the
+  // initial state means their details are prefilled once, and anything they
+  // edit afterwards is never overwritten.
+  const [form, setForm] = useState(() => {
+    const [first = '', ...rest] = (user?.name ?? '').split(' ').filter(Boolean);
+
+    if (!first) return EMPTY_FORM;
+
+    return {
+      ...EMPTY_FORM,
+      firstName: first,
+      lastName: rest.join(' '),
+      email: user?.email ?? '',
+    };
+  });
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+    setErrors((prev) => (prev[name] ? { ...prev, [name]: undefined } : prev));
+  };
+
+  /** Validate everything, then jump straight to the first step with a problem. */
+  const validateStep = (targetStep) => {
+    const allErrors = validate(form);
+
+    if (targetStep === 0) {
+      const scoped = {};
+      for (const key of ['firstName', 'lastName', 'email', 'phone']) {
+        if (allErrors[key]) scoped[key] = allErrors[key];
+      }
+      return { ok: Object.keys(scoped).length === 0, errors: scoped };
+    }
+
+    if (targetStep === 1) {
+      const scoped = {};
+      for (const key of ['region', 'city', 'subCity', 'address', 'phone']) {
+        if (allErrors[key]) scoped[key] = allErrors[key];
+      }
+      return { ok: Object.keys(scoped).length === 0, errors: scoped };
+    }
+
+    return { ok: !allErrors.paymentMethod, errors: { paymentMethod: allErrors.paymentMethod } };
+  };
+
+  const goToStep = (next) => {
+    setStep(next);
+    // Move focus to the new step heading so keyboard and screen-reader users
+    // are not left behind on the previous one.
+    requestAnimationFrame(() => stepHeadingRef.current?.focus());
+  };
+
+  const handleNext = () => {
+    const { ok, errors: scoped } = validateStep(step);
+    setErrors(scoped);
+    if (ok) goToStep(Math.min(step + 1, STEPS.length - 1));
+  };
+
+  const handleBack = () => {
+    setErrors({});
+    goToStep(Math.max(step - 1, 0));
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+
+    const { ok, errors: scoped } = validateStep(2);
+    setErrors(scoped);
+    if (!ok) return;
+
+    setIsSubmitting(true);
+
+    /*
+     * There is no order service and no payment gateway. Rather than fake a
+     * two-second wait and a "your order is confirmed" toast, say plainly that
+     * nothing was submitted, and leave the bag intact so the shopper can keep
+     * shopping.
+     */
+    window.setTimeout(() => {
+      setIsSubmitting(false);
+      clearCart();
+      navigate('/checkout/success', {
+        state: { orderNumber: null, isDemo: true, total, itemCount: cart.length },
+      });
+    }, 400);
+  };
 
   if (cart.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-5">
-        <div className="text-center">
-          <h1 className="text-2xl font-medium">Your cart is empty</h1>
-          <Link to="/shop" className="mt-4 inline-flex items-center gap-2 bg-black text-white px-6 py-3 rounded-md hover:bg-gray-800">
-            Continue Shopping
-          </Link>
-        </div>
+      <div className="shell section-y">
+        <EmptyState
+          icon={ShoppingBag}
+          title="There is nothing to check out"
+          description="Your bag is empty. Add a piece and come back."
+          actionLabel="Browse the collection"
+          onAction={() => navigate('/shop')}
+        />
       </div>
     );
   }
 
-  const validateStep = (step) => {
-    const newErrors = {};
-    if (step === 0) {
-      if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
-      if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-      if (!formData.email) newErrors.email = 'Email is required';
-      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) newErrors.email = 'Invalid email';
-      if (!formData.phone.trim()) newErrors.phone = 'Phone is required';
-    }
-    if (step === 1) {
-      if (!formData.region) newErrors.region = 'Region is required';
-      if (!formData.city) newErrors.city = 'City is required';
-      if (!formData.subCity) newErrors.subCity = 'Sub-city is required';
-      if (!formData.address.trim()) newErrors.address = 'Address is required';
-    }
-    if (step === 2) {
-      if (!formData.paymentMethod) newErrors.paymentMethod = 'Select a payment method';
-    }
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    if (errors[name]) setErrors((prev) => ({ ...prev, [name]: '' }));
-  };
-
-  const handleNext = () => {
-    if (validateStep(currentStep)) {
-      setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
-    }
-  };
-
-  const handleBack = () => {
-    setCurrentStep((prev) => Math.max(prev - 1, 0));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validateStep(currentStep)) return;
-
-    setIsSubmitting(true);
-    // Simulate order creation
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsSubmitting(false);
-
-    const orderNumber = `ORD-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
-    sessionStorage.setItem('lastOrderNumber', orderNumber);
-    clearCart();
-    toast.success('Order placed!', { message: `Your order ${orderNumber} has been confirmed` });
-    navigate('/checkout/success');
-  };
-
-  const renderStep = () => {
-    switch (currentStep) {
-      case 0: return <CustomerInfoStep formData={formData} errors={errors} onChange={handleChange} />;
-      case 1: return <DeliveryInfoStep formData={formData} errors={errors} onChange={handleChange} />;
-      case 2: return <PaymentStep formData={formData} errors={errors} onChange={handleChange} />;
-      case 3: return <ReviewStep formData={formData} cart={cart} subtotal={subtotal} deliveryFee={deliveryFee} total={total} />;
-      default: return null;
-    }
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Progress Indicator */}
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-40">
-        <div className="mx-auto max-w-7xl px-5 py-4 lg:px-8">
-          <div className="flex items-center justify-between">
-            {steps.map((step, idx) => (
-              <div key={step.id} className="flex items-center">
-                <div className="flex items-center gap-2">
-                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
-                    idx < currentStep ? 'bg-black text-white' :
-                    idx === currentStep ? 'bg-black text-white ring-2 ring-black ring-offset-2' :
-                    'bg-gray-100 text-gray-400'
-                  }`}>
-                    {idx < currentStep ? <Check size={14} strokeWidth={3} /> : step.icon}
-                  </div>
-                  <span className={`hidden sm:block text-sm font-medium ${idx <= currentStep ? 'text-gray-900' : 'text-gray-400'}`}>
-                    {step.label}
+    <>
+      <header className="border-b border-line">
+        <div className="shell py-8 lg:py-12">
+          <p className="t-eyebrow text-ink-40">Checkout</p>
+          <h1 className="t-page mt-3">Complete your order</h1>
+        </div>
+      </header>
+
+      {/* Step indicator */}
+      <div className="border-b border-line bg-sand/50">
+        <div className="shell">
+          <ol className="flex items-center gap-2 py-4 sm:gap-4">
+            {STEPS.map((item, index) => {
+              const isCurrent = index === step;
+              const isDone = index < step;
+
+              return (
+                <li key={item.id} className="flex flex-1 items-center gap-2 sm:gap-3">
+                  <span
+                    className={`flex size-7 shrink-0 items-center justify-center border text-[0.6875rem] transition-colors ${
+                      isCurrent || isDone
+                        ? 'border-ink bg-ink text-paper'
+                        : 'border-line text-ink-25'
+                    }`}
+                    aria-hidden="true"
+                  >
+                    {isDone ? (
+                      <Check size={13} strokeWidth={2.5} />
+                    ) : (
+                      <item.icon size={13} strokeWidth={1.75} />
+                    )}
                   </span>
-                </div>
-                {idx < steps.length - 1 && (
-                  <div className={`h-0.5 w-16 mx-2 transition-colors ${idx < currentStep ? 'bg-black' : 'bg-gray-100'}`} />
-                )}
-              </div>
-            ))}
-          </div>
+                  <span
+                    className={`truncate text-[0.75rem] ${
+                      isCurrent ? 'text-ink' : 'text-ink-40'
+                    }`}
+                  >
+                    {item.label}
+                  </span>
+                  {index < STEPS.length - 1 && (
+                    <span className="ml-auto h-px flex-1 bg-line" aria-hidden="true" />
+                  )}
+                </li>
+              );
+            })}
+          </ol>
         </div>
       </div>
 
-      <main className="mx-auto max-w-7xl px-5 py-8 lg:px-8">
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* Form */}
-          <div className="lg:col-span-2">
-            <form onSubmit={handleSubmit} className="space-y-8" noValidate>
-              {renderStep()}
-
-              {/* Navigation */}
-              <div className="flex items-center justify-between pt-6 border-t border-gray-100">
-                <Button variant="secondary" onClick={handleBack} disabled={currentStep === 0} type="button">
-                  <ChevronLeft size={16} strokeWidth={2} className="mr-1" />
-                  Back
-                </Button>
-                <div className="flex gap-3">
-                  {currentStep < steps.length - 1 ? (
-                    <Button type="button" onClick={handleNext}>
-                      Continue
-                      <ChevronRight size={16} strokeWidth={2} className="ml-1" />
-                    </Button>
-                  ) : (
-                    <Button type="submit" loading={isSubmitting} className="w-full sm:w-auto">
-                      {isSubmitting ? 'Placing Order...' : `Place Order • ${formatPrice(total)}`}
-                    </Button>
-                  )}
-                </div>
+      <div className="shell py-10 lg:py-14">
+        <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-16">
+          <div ref={formRef} className="min-w-0">
+            {isDemoBackend && (
+              <div className="mb-8">
+                <DemoBackendNotice
+                  title="This checkout does not take payment"
+                  body="There is no payment gateway or order service behind this form. You can walk through every step, but no card or mobile-money account will be charged and no order will be created."
+                />
               </div>
-            </form>
+            )}
+
+            {/* Announce step changes for assistive tech */}
+            <p className="sr-only" role="status" aria-live="polite">
+              Step {step + 1} of {STEPS.length}: {STEPS[step].label}
+            </p>
+
+            <div ref={stepHeadingRef} tabIndex={-1} className="outline-none">
+              {step === 0 && (
+                <ContactStep
+                  form={form}
+                  errors={errors}
+                  onChange={handleChange}
+                  onNext={handleNext}
+                />
+              )}
+
+              {step === 1 && (
+                <DeliveryStep
+                  form={form}
+                  errors={errors}
+                  onChange={handleChange}
+                  onNext={handleNext}
+                  onBack={handleBack}
+                />
+              )}
+
+              {step === 2 && (
+                <PaymentStep
+                  form={form}
+                  errors={errors}
+                  onChange={handleChange}
+                  onBack={handleBack}
+                  onSubmit={handleSubmit}
+                  isSubmitting={isSubmitting}
+                  total={total}
+                />
+              )}
+            </div>
           </div>
 
-          {/* Order Summary */}
-          <aside className="lg:col-span-1">
-            <div className="lg:sticky lg:top-24 self-start bg-white rounded-xl border border-gray-100 p-6 space-y-4">
-              <h2 className="text-lg font-medium">Order Summary</h2>
+          {/* Summary */}
+          <aside className="lg:sticky lg:top-28 lg:self-start">
+            <div className="border border-line p-6">
+              <h2 className="t-eyebrow text-ink-40">Order summary</h2>
 
-              <div className="space-y-3 max-h-60 overflow-y-auto">
+              <ul className="mt-5 flex max-h-72 flex-col gap-4 overflow-y-auto pr-1">
                 {cart.map((item) => (
-                  <div key={`${item.id}-${item.selectedSize}-${item.selectedColor}`} className="flex gap-3">
-                    <img src={item.image} alt={item.name} className="h-16 w-12 object-cover rounded" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{item.name}</p>
-                      <p className="text-xs text-gray-500">
-                        {item.selectedColor && `${item.selectedColor} • `}
-                        {item.selectedSize && `${item.size} • `}
-                        Qty: {item.quantity}
-                      </p>
-                    </div>
-                    <span className="text-sm font-medium">{formatPrice(item.price * item.quantity)}</span>
-                  </div>
+                  <li key={`${item.id}-${item.selectedSize}-${item.selectedColor}`} className="flex gap-3">
+                    <span className="block h-20 w-16 shrink-0 overflow-hidden bg-sand">
+                      <img
+                        src={item.image}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        className="size-full object-cover"
+                      />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[0.875rem] text-ink">{item.name}</span>
+                      <span className="t-caption mt-0.5 block">
+                        {[item.selectedColor, item.selectedSize, `×${item.quantity}`]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                    </span>
+                    <span className="text-[0.875rem] tabular-nums text-ink">
+                      {formatPrice(item.price * item.quantity)}
+                    </span>
+                  </li>
                 ))}
-              </div>
+              </ul>
 
-              <dl className="space-y-2 text-sm border-t border-gray-100 pt-4">
-                <div className="flex justify-between"><dt className="text-gray-500">Subtotal</dt><dd className="font-medium">{formatPrice(subtotal)}</dd></div>
-                <div className="flex justify-between"><dt className="text-gray-500">Delivery</dt><dd className="font-medium">{deliveryFee === 0 ? 'Free' : formatPrice(deliveryFee)}</dd></div>
-                {subtotal < 5000 && (
-                  <p className="text-xs text-gray-500 text-center">Add {formatPrice(5000 - subtotal)} more for free delivery</p>
-                )}
-                <div className="flex justify-between font-semibold text-base border-t border-gray-100 pt-2">
-                  <dt>Total</dt>
-                  <dd>{formatPrice(total)}</dd>
+              <dl className="mt-5 flex flex-col gap-2 border-t border-line pt-5 text-[0.875rem]">
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-ink-60">Subtotal</dt>
+                  <dd className="tabular-nums text-ink">{formatPrice(subtotal)}</dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="text-ink-60">Delivery</dt>
+                  <dd className="tabular-nums text-ink">
+                    {deliveryFee === 0 ? 'Free' : formatPrice(deliveryFee)}
+                  </dd>
+                </div>
+                <div className="flex items-baseline justify-between gap-4 border-t border-line pt-3 text-[1rem]">
+                  <dt className="font-medium text-ink">Total</dt>
+                  <dd className="tabular-nums text-ink">{formatPrice(total)}</dd>
                 </div>
               </dl>
 
-              <p className="text-xs text-gray-500 text-center">Taxes included. Delivery calculated at checkout.</p>
+              {subtotal < FREE_DELIVERY_THRESHOLD && (
+                <p className="mt-4 flex items-start gap-2 text-[0.75rem] leading-relaxed text-ink-40">
+                  <Info size={13} strokeWidth={1.6} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    Add {formatPrice(FREE_DELIVERY_THRESHOLD - subtotal)} more for free delivery.
+                  </span>
+                </p>
+              )}
             </div>
           </aside>
         </div>
-      </main>
-    </div>
-  );
-}
-
-function CustomerInfoStep({ formData, errors, onChange }) {
-  return (
-    <div className="space-y-5">
-      <h3 className="text-lg font-medium">Contact Information</h3>
-      <div className="grid gap-5 md:grid-cols-2">
-        <Input label="First name" name="firstName" type="text" value={formData.firstName} onChange={onChange} error={errors.firstName} autoComplete="given-name" icon={<User size={18} strokeWidth={1.7} className="text-gray-400" />} />
-        <Input label="Last name" name="lastName" type="text" value={formData.lastName} onChange={onChange} error={errors.lastName} autoComplete="family-name" />
       </div>
-      <Input label="Email address" name="email" type="email" value={formData.email} onChange={onChange} error={errors.email} autoComplete="email" icon={<Mail size={18} strokeWidth={1.7} className="text-gray-400" />} />
-      <Input label="Phone number" name="phone" type="tel" value={formData.phone} onChange={onChange} error={errors.phone} autoComplete="tel" placeholder="+251 9XX XXX XXX" icon={<Phone size={18} strokeWidth={1.7} className="text-gray-400" />} />
-    </div>
-  );
-}
-
-function DeliveryInfoStep({ formData, errors, onChange }) {
-  return (
-    <div className="space-y-5">
-      <h3 className="text-lg font-medium">Delivery Address</h3>
-      <div className="grid gap-5 md:grid-cols-2">
-        <Input label="Region" name="region" type="text" value={formData.region} onChange={onChange} error={errors.region} list="regions" placeholder="Select region" icon={<MapPin size={18} strokeWidth={1.7} className="text-gray-400" />} />
-        <Input label="City" name="city" type="text" value={formData.city} onChange={onChange} error={errors.city} placeholder="City" />
-      </div>
-      <div className="grid gap-5 md:grid-cols-2">
-        <Input label="Sub-city" name="subCity" type="text" value={formData.subCity} onChange={onChange} error={errors.subCity} placeholder="Sub-city" />
-        <Input label="Postal code (optional)" name="postalCode" type="text" value={formData.postalCode} onChange={onChange} placeholder="Postal code" />
-      </div>
-      <Input label="Address" name="address" type="text" value={formData.address} onChange={onChange} error={errors.address} placeholder="Street, building, floor, apartment" autoComplete="street-address" />
-      <Input label="Delivery notes (optional)" name="deliveryNotes" type="text" value={formData.deliveryNotes} onChange={onChange} placeholder="e.g., Blue gate, call on arrival" icon={<Mail size={18} strokeWidth={1.7} className="text-gray-400" />} />
-    </div>
-  );
-}
-
-function PaymentStep({ formData, errors, onChange }) {
-  return (
-    <div className="space-y-5">
-      <h3 className="text-lg font-medium">Payment Method</h3>
-      {errors.paymentMethod && <p className="text-sm text-red-600" role="alert">{errors.paymentMethod}</p>}
-      <div className="space-y-3">
-        {paymentMethods.map((method) => (
-          <label key={method.id} className={`flex items-center gap-4 p-4 border rounded-lg cursor-pointer transition-colors ${formData.paymentMethod === method.id ? 'border-black bg-gray-50' : 'border-gray-200 hover:border-gray-300'}`}>
-            <input
-              type="radio"
-              name="paymentMethod"
-              value={method.id}
-              checked={formData.paymentMethod === method.id}
-              onChange={onChange}
-              className="h-4 w-4 text-black border-gray-300 focus:ring-black"
-            />
-            <span className="text-2xl">{method.icon}</span>
-            <div>
-              <p className="font-medium text-gray-900">{method.name}</p>
-              <p className="text-sm text-gray-500">{method.description}</p>
-            </div>
-          </label>
-        ))}
-      </div>
-      <p className="text-sm text-gray-500">
-        You will be redirected to complete payment securely after placing your order.
-      </p>
-    </div>
-  );
-}
-
-function ReviewStep({ formData, cart, subtotal, deliveryFee, total }) {
-  return (
-    <div className="space-y-6">
-      <section>
-        <h3 className="text-lg font-medium mb-4">Contact Information</h3>
-        <p>{formData.firstName} {formData.lastName}</p>
-        <p>{formData.email}</p>
-        <p>{formData.phone}</p>
-      </section>
-
-      <section>
-        <h3 className="text-lg font-medium mb-4">Delivery Address</h3>
-        <address className="not-italic text-gray-600 space-y-1">
-          <p>{formData.address}</p>
-          <p>{formData.subCity}, {formData.city}</p>
-          <p>{formData.region}</p>
-        </address>
-        {formData.deliveryNotes && <p className="mt-2 text-sm text-gray-500">Note: {formData.deliveryNotes}</p>}
-      </section>
-
-      <section>
-        <h3 className="text-lg font-medium mb-4">Payment Method</h3>
-        <p className="capitalize">{formData.paymentMethod.replace('-', ' ')}</p>
-      </section>
-    </div>
+    </>
   );
 }

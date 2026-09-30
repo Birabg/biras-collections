@@ -1,128 +1,134 @@
-import { Truck, Clock, MapPin, CheckCircle, XCircle, Shield, Package, ChevronDown } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Truck, Clock, MapPin, Package, ChevronDown, ArrowRight } from 'lucide-react';
 
-const shippingInfo = [
+const DELIVERY_OPTIONS = [
   {
-    title: 'Free Delivery',
-    description: 'Enjoy free delivery on all orders over 5,000 ETB. Standard delivery fee of 150 ETB applies to orders below this amount.',
     icon: Truck,
+    title: 'Free over 5,000 ETB',
+    body: 'Orders above 5,000 ETB ship free. Below that a flat 150 ETB delivery fee applies, shown before you pay.',
   },
   {
-    title: 'Delivery Times',
-    description: 'Addis Ababa: 2-3 business days. Other cities: 3-5 business days. Remote areas: 5-7 business days.',
     icon: Clock,
+    title: 'Two to seven business days',
+    body: 'Addis Ababa is typically 2 to 3 business days. Other cities 3 to 5, and remote areas 5 to 7.',
   },
   {
-    title: 'Coverage',
-    description: 'We deliver to all regions in Ethiopia including Addis Ababa, Dire Dawa, and all regional states.',
     icon: MapPin,
+    title: 'Nationwide coverage',
+    body: 'We deliver to all of Ethiopia, including regional states, Dire Dawa, and Harari. International shipping is not yet available.',
   },
   {
-    title: 'Tracking',
-    description: 'Track your order in real-time via your account or the tracking link sent via SMS and email.',
     icon: Package,
+    title: 'Tracked from dispatch',
+    body: 'Once a parcel leaves our studio you get a tracking reference by SMS and email, and can follow it from your account.',
   },
 ];
 
-const faqs = [
-  {
-    q: 'Do you offer free delivery?',
-    a: 'Yes, free delivery on orders over 5,000 ETB. Orders below this amount have a 150 ETB delivery fee.',
-  },
+const FAQS = [
   {
     q: 'How long does delivery take?',
-    a: 'Addis Ababa: 2-3 business days. Other cities: 3-5 business days. Remote areas: 5-7 business days.',
+    a: 'Addis Ababa 2 to 3 business days, other cities 3 to 5, and remote areas 5 to 7. These are estimates, so a courier delay can occasionally add a day.',
   },
   {
     q: 'Can I change my delivery address after ordering?',
-    a: 'Contact us within 1 hour of placing your order. After that, the order may already be processing.',
+    a: 'Tell us within an hour of ordering and we will try to update it. After that the parcel is usually already with the courier.',
   },
   {
-    q: 'What if I\'m not home during delivery?',
-    a: 'Our courier will call you. If unreachable, they\'ll leave a note and attempt re-delivery the next business day.',
+    q: 'What if I am not home at delivery?',
+    a: 'The courier will call the number on your order. If we cannot reach you they leave a note and attempt again the next business day.',
   },
   {
     q: 'Do you ship internationally?',
-    a: 'Currently we only ship within Ethiopia. International shipping is planned for the future.',
+    a: 'Not yet. We deliver within Ethiopia only, and international shipping is planned for a future season.',
   },
+];
+
+const RELATED_LINKS = [
+  { label: 'Returns and exchanges', to: '/returns' },
+  { label: 'Common questions', to: '/faq' },
+  { label: 'Contact support', to: '/contact' },
 ];
 
 export default function Shipping() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-100 bg-white">
-        <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8 lg:py-16">
-          <h1 className="text-4xl font-medium tracking-tight">Shipping Information</h1>
-          <p className="mt-2 text-gray-500">Everything you need to know about delivery</p>
+    <>
+      <header className="border-b border-line">
+        <div className="shell py-10 lg:py-16">
+          <p className="t-eyebrow text-ink-40">Help</p>
+          <h1 className="t-page mt-3">Shipping and delivery</h1>
+          <p className="t-body mt-4 max-w-2xl text-[0.9375rem]">
+            How your order travels from our studio in Addis Ababa to your door, and what to expect
+            along the way.
+          </p>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-10">
+      <div className="shell py-10 lg:py-16">
+        <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-16">
+          <div className="min-w-0">
             <section>
-              <h2 className="text-2xl font-medium mb-6">Delivery Options</h2>
-              <div className="grid gap-6 md:grid-cols-2">
-                {shippingInfo.map((item, idx) => (
-                  <div key={idx} className="bg-white rounded-xl border border-gray-100 p-6 hover:border-gray-200 transition-colors">
-                    <div className="h-12 w-12 rounded-lg bg-gray-100 flex items-center justify-center mb-4">
-                      <item.icon size={24} strokeWidth={1.7} className="text-gray-600" />
-                    </div>
-                    <h3 className="font-medium text-gray-900 mb-2">{item.title}</h3>
-                    <p className="text-gray-600">{item.description}</p>
+              <h2 className="t-section !text-xl">Delivery at a glance</h2>
+
+              <div className="mt-6 grid gap-px border border-line bg-line sm:grid-cols-2">
+                {DELIVERY_OPTIONS.map((option) => (
+                  <div key={option.title} className="bg-paper p-6">
+                    <span className="flex size-9 items-center justify-center border border-line text-ink-40">
+                      <option.icon size={16} strokeWidth={1.6} aria-hidden="true" />
+                    </span>
+                    <h3 className="mt-4 text-[0.9375rem] font-medium text-ink">{option.title}</h3>
+                    <p className="t-body mt-2 text-[0.875rem]">{option.body}</p>
                   </div>
                 ))}
               </div>
             </section>
 
-            <section>
-              <h2 className="text-2xl font-medium mb-6">Shipping FAQ</h2>
-              <div className="space-y-4">
-                {faqs.map((faq, idx) => (
-                  <details key={idx} className="bg-white rounded-xl border border-gray-100 group">
-                    <summary className="flex items-center justify-between p-6 cursor-pointer list-none">
-                      <h3 className="font-medium text-gray-900 pr-8">{faq.q}</h3>
-                      <ChevronDown className="h-5 w-5 text-gray-400 transition-transform group-open:rotate-180" strokeWidth={2} />
+            <section className="mt-14">
+              <h2 className="t-section !text-xl">Common delivery questions</h2>
+
+              <div className="mt-6 flex flex-col divide-y divide-line border-y border-line">
+                {FAQS.map((faq) => (
+                  <details key={faq.q} className="group">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-left marker:hidden">
+                      <span className="text-[0.9375rem] text-ink">{faq.q}</span>
+                      <ChevronDown
+                        size={16}
+                        strokeWidth={1.6}
+                        className="shrink-0 text-ink-40 transition-transform duration-200 group-open:rotate-180"
+                        aria-hidden="true"
+                      />
                     </summary>
-                    <div className="px-6 pb-6 text-gray-600 border-t border-gray-100">
-                      {faq.a}
-                    </div>
+                    <p className="t-body -mt-1 pb-5 text-[0.875rem]">{faq.a}</p>
                   </details>
                 ))}
               </div>
             </section>
           </div>
 
-          {/* Sidebar */}
-          <aside className="lg:col-span-1">
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-6 lg:sticky lg:top-24 self-start">
-              <div className="p-4 bg-green-50 rounded-lg">
-                <CheckCircle size={24} strokeWidth={1.7} className="text-green-600 mb-2" />
-                <h3 className="font-medium text-gray-900">Free Delivery Available</h3>
-                <p className="text-sm text-gray-600 mt-1">On orders over 5,000 ETB</p>
-              </div>
-
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <Shield size={24} strokeWidth={1.7} className="text-blue-600 mb-2" />
-                <h3 className="font-medium text-gray-900">Secure Delivery</h3>
-                <p className="text-sm text-gray-600 mt-1">Tracked & insured shipments</p>
-              </div>
-
-              <div className="p-4 bg-gray-50 rounded-lg">
-                <Clock size={24} strokeWidth={1.7} className="text-gray-600 mb-2" />
-                <h3 className="font-medium text-gray-900">Fast Processing</h3>
-                <p className="text-sm text-gray-600 mt-1">Orders ship within 24 hours</p>
-              </div>
-
-              <div className="pt-4 border-t border-gray-100">
-                <h3 className="font-medium mb-3">Need Help?</h3>
-                <a href="/contact" className="text-sm text-gray-600 hover:text-black block mb-2">Contact Support</a>
-                <a href="/returns" className="text-sm text-gray-600 hover:text-black block">Returns & Exchanges</a>
-              </div>
+          <aside className="lg:sticky lg:top-28 lg:self-start">
+            <div className="border border-line p-6">
+              <h2 className="t-eyebrow text-ink-40">Still deciding?</h2>
+              <ul className="mt-4 flex flex-col gap-2.5">
+                {RELATED_LINKS.map((link) => (
+                  <li key={link.to}>
+                    <Link
+                      to={link.to}
+                      className="group inline-flex items-center gap-1.5 text-[0.875rem] text-ink-60 transition-colors hover:text-ink"
+                    >
+                      {link.label}
+                      <ArrowRight
+                        size={13}
+                        strokeWidth={1.75}
+                        className="transition-transform group-hover:translate-x-0.5"
+                        aria-hidden="true"
+                      />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </div>
           </aside>
         </div>
-      </main>
-    </div>
+      </div>
+    </>
   );
 }

@@ -1,0 +1,272 @@
+/**
+ * Auth service adapter.
+ * ============================================================================
+ *  READ THIS BEFORE SHIPPING
+ * ============================================================================
+ *  There is NO backend behind this file. `createDemoAuthService()` stores a
+ *  plaintext profile and session in localStorage and trusts a role string that
+ *  the browser controls completely.
+ *
+ *  That is deliberate for UI work: it lets the route guards, role-aware
+ *  navigation and every auth error state be built, demonstrated and tested
+ *  against real behaviour instead of a mock.
+ *
+ *  It is NOT security and must never be treated as security. A user can edit
+ *  localStorage and grant themselves the administrator role.
+ *
+ *  To go live, implement the same six methods against your API and export that
+ *  as `authService`. Nothing else in the app changes — no component imports
+ *  this module directly, and no component compares role strings.
+ *
+ *  The server must independently verify identity, role, permission and
+ *  resource ownership on every request. Frontend guards are UX only.
+ * ============================================================================
+ */
+
+import { ROLES, isRole } from './roles';
+
+const DEMO_FLAG = 'biras_auth_backend';
+const SESSION_KEY = 'biras_session';
+const USERS_KEY = 'biras_demo_users';
+
+/** Session lifetime. Short enough to exercise the expiry UX. */
+const SESSION_TTL_MS = 1000 * 60 * 60 * 8; // 8 hours
+
+/** Seed accounts so every actor can be inspected. Passwords are intentionally public. */
+export const DEMO_ACCOUNTS = [
+  { email: 'guest@biras.demo', password: 'demo1234', name: 'Guest Shopper', role: ROLES.CUSTOMER },
+  { email: 'staff@biras.demo', password: 'demo1234', name: 'Staff Member', role: ROLES.STAFF },
+  { email: 'manager@biras.demo', password: 'demo1234', name: 'Store Manager', role: ROLES.MANAGER },
+  { email: 'admin@biras.demo', password: 'demo1234', name: 'Administrator', role: ROLES.ADMIN },
+];
+
+export const DEMO_CREDENTIALS = { password: 'demo1234' };
+
+/** Machine-readable failure codes. The UI maps these to human copy. */
+export const AUTH_ERRORS = {
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  EMAIL_TAKEN: 'EMAIL_TAKEN',
+  EMAIL_INVALID: 'EMAIL_INVALID',
+  WEAK_PASSWORD: 'WEAK_PASSWORD',
+  TERMS_NOT_ACCEPTED: 'TERMS_NOT_ACCEPTED',
+  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
+  SESSION_EXPIRED: 'SESSION_EXPIRED',
+  INVALID_RESET_TOKEN: 'INVALID_RESET_TOKEN',
+  RATE_LIMITED: 'RATE_LIMITED',
+  NETWORK: 'NETWORK',
+};
+
+export class AuthError extends Error {
+  constructor(code, message, details) {
+    super(message ?? code);
+    this.name = 'AuthError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
+/* ------------------------------------------------------------- demo storage */
+
+const readJSON = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const writeJSON = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* private mode / quota — the session simply will not persist */
+  }
+};
+
+const removeKey = (key) => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* no-op */
+  }
+};
+
+const normaliseEmail = (email) => String(email ?? '').trim().toLowerCase();
+
+const delay = (ms = 550) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/* ------------------------------------------------------ demo service factory */
+
+export function createDemoAuthService() {
+  /** Seed the demo user directory once. */
+  function ensureSeeded() {
+    if (localStorage.getItem(DEMO_FLAG) === 'true') return;
+    writeJSON(
+      USERS_KEY,
+      DEMO_ACCOUNTS.map((account) => ({
+        email: normaliseEmail(account.email),
+        password: account.password,
+        name: account.name,
+        role: account.role,
+        locked: false,
+      })),
+    );
+    localStorage.setItem(DEMO_FLAG, 'true');
+  }
+
+  function readUsers() {
+    ensureSeeded();
+    return readJSON(USERS_KEY, []);
+  }
+
+  function writeUsers(users) {
+    writeJSON(USERS_KEY, users);
+  }
+
+  function publicUser(record) {
+    if (!record) return null;
+    const { password, ...safe } = record;
+    return { ...safe, role: isRole(safe.role) ? safe.role : ROLES.CUSTOMER };
+  }
+
+  function issueSession(user) {
+    const session = {
+      user,
+      issuedAt: Date.now(),
+      expiresAt: Date.now() + SESSION_TTL_MS,
+    };
+    writeJSON(SESSION_KEY, session);
+    return session;
+  }
+
+  return {
+    /** True while the demo backend is in use. Drives the "demo" UI banner. */
+    isDemo: true,
+
+    /**
+     * Re-hydrate the session on boot / page refresh.
+     * @returns {Promise<{user: object|null, expired: boolean}>}
+     */
+    async restoreSession() {
+      await delay(200);
+      const session = readJSON(SESSION_KEY, null);
+
+      if (!session?.user) return { user: null, expired: false };
+
+      if (typeof session.expiresAt === 'number' && session.expiresAt <= Date.now()) {
+        removeKey(SESSION_KEY);
+        return { user: null, expired: true };
+      }
+
+      // Re-read the record so a role change is reflected, and so a deleted
+      // user cannot keep a live session.
+      const record = readUsers().find((u) => u.email === session.user.email);
+      if (!record || record.locked) {
+        removeKey(SESSION_KEY);
+        return { user: null, expired: Boolean(session) };
+      }
+
+      const user = publicUser(record);
+      issueSession(user);
+      return { user, expired: false };
+    },
+
+    async login({ email, password }) {
+      await delay(650);
+      const users = readUsers();
+      const user = users.find((u) => u.email === normaliseEmail(email));
+
+      // Same message for "no such user" and "wrong password" so the form does
+      // not disclose which emails are registered.
+      if (!user || user.password !== password) {
+        throw new AuthError(
+          AUTH_ERRORS.INVALID_CREDENTIALS,
+          'We could not match that email and password.',
+        );
+      }
+
+      if (user.locked) {
+        throw new AuthError(
+          AUTH_ERRORS.ACCOUNT_LOCKED,
+          'This account has been disabled. Please contact support.',
+        );
+      }
+
+      const safe = publicUser(user);
+      issueSession(safe);
+      return safe;
+    },
+
+    async register({ name, email, password, acceptedTerms }) {
+      await delay(700);
+
+      if (!acceptedTerms) {
+        throw new AuthError(AUTH_ERRORS.TERMS_NOT_ACCEPTED, 'Please accept the terms to continue.');
+      }
+
+      const users = readUsers();
+      const normalised = normaliseEmail(email);
+
+      if (users.some((u) => u.email === normalised)) {
+        throw new AuthError(
+          AUTH_ERRORS.EMAIL_TAKEN,
+          'An account already exists with that email address.',
+        );
+      }
+
+      const record = {
+        email: normalised,
+        password,
+        name: String(name ?? '').trim(),
+        role: ROLES.CUSTOMER, // self-registration can never grant a staff role
+        locked: false,
+        createdAt: new Date().toISOString(),
+      };
+
+      writeUsers([...users, record]);
+
+      const safe = publicUser(record);
+      issueSession(safe);
+      return safe;
+    },
+
+    async logout() {
+      await delay(200);
+      removeKey(SESSION_KEY);
+    },
+
+    /**
+     * Always succeeds. A real implementation must not reveal whether the
+     * address exists, and must send the reset link by email.
+     */
+    async requestPasswordReset() {
+      await delay(600);
+      return { sent: true };
+    },
+
+    async resetPassword({ token, password }) {
+      await delay(650);
+      if (!token) {
+        throw new AuthError(
+          AUTH_ERRORS.INVALID_RESET_TOKEN,
+          'This reset link is invalid or has already been used.',
+        );
+      }
+      return { updated: true };
+    },
+
+    /** Test hook for the session-expiry path. Demo backend only. */
+    async expireSessionForTesting() {
+      const session = readJSON(SESSION_KEY, null);
+      if (!session) return;
+      writeJSON(SESSION_KEY, { ...session, expiresAt: Date.now() - 1 });
+    },
+  };
+}
+
+/**
+ * The app imports this binding only.
+ * Swap the factory call for a real HTTP implementation and no other file changes.
+ */
+export const authService = createDemoAuthService();

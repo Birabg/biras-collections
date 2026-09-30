@@ -1,149 +1,256 @@
-import { ChevronDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useId } from 'react';
+import { Search, Plus, ArrowRight } from 'lucide-react';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
 
-const faqCategories = [
-  { id: 'all', label: 'All Questions' },
-  { id: 'orders', label: 'Orders & Payments' },
-  { id: 'shipping', label: 'Shipping & Delivery' },
-  { id: 'returns', label: 'Returns & Exchanges' },
-  { id: 'account', label: 'Account & Privacy' },
+const CATEGORIES = [
+  { id: 'all', label: 'All questions' },
+  { id: 'orders', label: 'Orders and payment' },
+  { id: 'shipping', label: 'Shipping' },
+  { id: 'returns', label: 'Returns' },
+  { id: 'account', label: 'Account' },
 ];
 
-const faqs = [
-  { category: 'orders', q: 'How do I place an order?', a: 'Browse our collection, add items to your bag, proceed to checkout, fill in your details, choose a payment method, and confirm your order. You\'ll receive an order confirmation via email and SMS.' },
-  { category: 'orders', q: 'What payment methods do you accept?', a: 'We accept Telebirr, Chapa (cards, bank transfers, mobile money), CBE Birr, and Cash on Delivery for orders within Addis Ababa.' },
-  { category: 'orders', q: 'Can I modify or cancel my order?', a: 'You can modify or cancel your order within 1 hour of placing it. After that, the order enters processing and changes may not be possible. Contact support for assistance.' },
-  { category: 'orders', q: 'Do you offer gift cards?', a: 'Yes! Digital gift cards are available in denominations of 500, 1,000, 2,500, and 5,000 ETB. They never expire and can be used online or in-store.' },
-  { category: 'shipping', q: 'How long does delivery take?', a: 'Addis Ababa: 2-3 business days. Other major cities: 3-5 business days. Remote areas: 5-7 business days. You\'ll receive tracking info via SMS and email.' },
-  { category: 'shipping', q: 'Do you offer free delivery?', a: 'Yes! Free delivery on all orders over 5,000 ETB. Orders below this amount have a 150 ETB delivery fee.' },
-  { category: 'shipping', q: 'Can I change my delivery address?', a: 'Contact us within 1 hour of placing your order. After processing begins, address changes may not be possible.' },
-  { category: 'shipping', q: 'What if I\'m not home during delivery?', a: 'Our courier will call you. If unreachable, they\'ll leave a note and attempt re-delivery the next business day. After 3 attempts, the package returns to us.' },
-  { category: 'returns', q: 'What is your return policy?', a: '30-day returns on unworn, unwashed items with original tags. Free return shipping on orders over 5,000 ETB (150 ETB fee for orders below). Refunds processed in 5-7 business days.' },
-  { category: 'returns', q: 'How do I start a return?', a: 'Log into your account, go to My Orders, select the order, and click "Return Items". Choose items and reason, print the label, and drop off at any courier location.' },
-  { category: 'returns', q: 'Can I exchange for a different size?', a: 'Yes! Select "Exchange" when starting your return, choose the new size/color, and we\'ll ship the replacement immediately upon receiving your return - no extra charge.' },
-  { category: 'returns', q: 'What items cannot be returned?', a: 'Underwear, socks, swimwear (without liner), personalized items, gift cards, final sale items, and beauty products with broken seals cannot be returned for hygiene reasons.' },
-  { category: 'account', q: 'How do I create an account?', a: 'Click "Sign In" then "Create Account". Fill in your details and verify your email. You can also checkout as a guest and create an account later.' },
-  { category: 'account', q: 'How do I reset my password?', a: 'Click "Forgot Password" on the sign-in page, enter your email, and follow the reset link sent to your inbox.' },
-  { category: 'account', q: 'Is my personal information secure?', a: 'Yes. We use industry-standard encryption and never store full payment details. See our Privacy Policy for details on data handling.' },
+const FAQS = [
+  {
+    category: 'orders',
+    q: 'How do I place an order?',
+    a: 'Add pieces to your bag, continue to checkout, and fill in your contact and delivery details. Choose a payment method and review before submitting.',
+  },
+  {
+    category: 'orders',
+    q: 'Which payment methods are available?',
+    a: 'Telebirr, CBE Birr, Chapa, and cash on delivery are the options we plan to support. No payment gateway is connected to this demo, so nothing is actually charged.',
+  },
+  {
+    category: 'orders',
+    q: 'Can I change or cancel an order?',
+    a: 'Contact us as soon as possible and we will do what we can. Once a parcel is with the courier, changes are usually no longer possible.',
+  },
+  {
+    category: 'orders',
+    q: 'Are my card details stored?',
+    a: 'No card details are ever entered or stored on this site. In production, payment would be handled entirely by the gateway, so card data would never touch our servers.',
+  },
+  {
+    category: 'shipping',
+    q: 'How long does delivery take?',
+    a: 'Addis Ababa 2 to 3 business days, other cities 3 to 5, and remote areas 5 to 7. See the shipping page for the full breakdown.',
+  },
+  {
+    category: 'shipping',
+    q: 'Is delivery free?',
+    a: 'Delivery is free on orders over 5,000 ETB. Below that a flat 150 ETB fee is added at checkout.',
+  },
+  {
+    category: 'shipping',
+    q: 'Can I change my delivery address?',
+    a: 'Tell us within an hour of ordering. After that the parcel is usually already out for delivery.',
+  },
+  {
+    category: 'returns',
+    q: 'What is your return policy?',
+    a: '30 days from delivery, on unworn and unwashed pieces with the original tags. Returns are free above 5,000 ETB, otherwise 150 ETB is deducted from the refund.',
+  },
+  {
+    category: 'returns',
+    q: 'How do I start a return?',
+    a: 'Message us with your order number and the pieces involved. We send a return reference and the nearest drop-off point.',
+  },
+  {
+    category: 'returns',
+    q: 'Can I exchange for a different size?',
+    a: 'Yes, at no extra charge. We dispatch the replacement as soon as the original arrives and passes inspection.',
+  },
+  {
+    category: 'account',
+    q: 'Do I need an account to order?',
+    a: 'No. You can check out as a guest. An account simply keeps your order history and addresses in one place.',
+  },
+  {
+    category: 'account',
+    q: 'How do I reset my password?',
+    a: 'Use the forgot-password link on the sign-in page. In this demo, no email is actually sent, so the reset flow runs entirely in your browser.',
+  },
+  {
+    category: 'account',
+    q: 'What happens to my data?',
+    a: 'In this demo everything is stored in your own browser and never leaves your device. The privacy page explains what a real deployment would need to do.',
+  },
 ];
 
-export default function FAQ() {
-  const [activeCategory, setActiveCategory] = useState('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [expandedItems, setExpandedItems] = useState(new Set());
+const RELATED_LINKS = [
+  { label: 'Shipping and delivery', to: '/shipping' },
+  { label: 'Returns and exchanges', to: '/returns' },
+  { label: 'Privacy', to: '/privacy' },
+];
 
-  const filteredFAQs = faqs.filter((faq) => {
-    const matchesCategory = activeCategory === 'all' || faq.category === activeCategory;
-    const matchesSearch = faq.q.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          faq.a.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
-  });
-
-  const toggleItem = (index) => {
-    setExpandedItems((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
-  };
+function FaqRow({ question, answer }) {
+  const panelId = useId();
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-100 bg-white">
-        <div className="mx-auto max-w-7xl px-5 py-12 lg:px-8 lg:py-16">
-          <h1 className="text-4xl font-medium tracking-tight">Frequently Asked Questions</h1>
-          <p className="mt-2 text-gray-500">Quick answers to common questions</p>
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-5 text-left marker:hidden">
+        <span className="text-[0.9375rem] text-ink">{question}</span>
+        <Plus
+          size={16}
+          strokeWidth={1.6}
+          className="shrink-0 text-ink-40 transition-transform duration-200 group-open:rotate-45"
+          aria-hidden="true"
+        />
+      </summary>
+      <p id={panelId} className="t-body -mt-1 max-w-2xl pb-5 text-[0.875rem]">
+        {answer}
+      </p>
+    </details>
+  );
+}
+
+export default function FAQ() {
+  const [category, setCategory] = useState('all');
+  const [query, setQuery] = useState('');
+
+  const normalisedQuery = query.trim().toLowerCase();
+
+  const visibleFaqs = FAQS.filter((faq) => {
+    if (category !== 'all' && faq.category !== category) return false;
+    if (!normalisedQuery) return true;
+    return (
+      faq.q.toLowerCase().includes(normalisedQuery) ||
+      faq.a.toLowerCase().includes(normalisedQuery)
+    );
+  });
+
+  return (
+    <>
+      <header className="border-b border-line">
+        <div className="shell py-10 lg:py-16">
+          <p className="t-eyebrow text-ink-40">Help</p>
+          <h1 className="t-page mt-3">Frequently asked questions</h1>
+          <p className="t-body mt-4 max-w-2xl text-[0.9375rem]">
+            Short answers about ordering, delivery, returns, and your account.
+          </p>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-5 py-10 lg:px-8">
-        <div className="grid gap-8 lg:grid-cols-4">
-          {/* Sidebar */}
-          <aside className="lg:col-span-1">
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-6 lg:sticky lg:top-24 self-start">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
+      <div className="shell py-10 lg:py-16">
+        <div className="grid gap-10 lg:grid-cols-[16rem_minmax(0,1fr)] lg:gap-16">
+          <aside className="lg:sticky lg:top-28 lg:self-start">
+            <div>
+              <label htmlFor="faq-search" className="t-eyebrow text-ink-40">
+                Search
+              </label>
+              <div className="mt-3">
+                <Input
+                  id="faq-search"
                   type="search"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search questions..."
-                  className="w-full h-11 pl-12 pr-4 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
-                  aria-label="Search FAQ"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search questions"
+                  icon={<Search size={15} strokeWidth={1.7} />}
                 />
               </div>
+            </div>
 
-              <nav aria-label="FAQ Categories">
-                <ul className="space-y-1">
-                  {faqCategories.map((cat) => (
-                    <li key={cat.id}>
+            <nav aria-label="Question categories" className="mt-8">
+              <h2 className="t-eyebrow text-ink-40">Browse by topic</h2>
+              <ul className="mt-3 flex flex-wrap gap-2 lg:flex-col lg:gap-0.5">
+                {CATEGORIES.map((item) => {
+                  const isActive = item.id === category;
+
+                  return (
+                    <li key={item.id}>
                       <button
-                        onClick={() => setActiveCategory(cat.id)}
-                        className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                          activeCategory === cat.id
-                            ? 'bg-black text-white'
-                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        type="button"
+                        onClick={() => setCategory(item.id)}
+                        aria-current={isActive ? 'true' : undefined}
+                        className={`w-full px-3 py-2 text-left text-[0.8125rem] transition-colors ${
+                          isActive
+                            ? 'bg-sand text-ink'
+                            : 'text-ink-60 hover:bg-sand/60 hover:text-ink'
                         }`}
                       >
-                        {cat.label}
+                        {item.label}
                       </button>
                     </li>
-                  ))}
-                </ul>
-              </nav>
-
-              <div className="pt-4 border-t border-gray-100">
-                <p className="text-sm text-gray-500 mb-3">Still need help?</p>
-                <Link to="/contact" className="block w-full h-11 flex items-center justify-center gap-2 bg-black text-white text-sm font-medium rounded-md hover:bg-gray-800 transition-colors">
-                  Contact Support
-                </Link>
-              </div>
-            </div>
+                  );
+                })}
+              </ul>
+            </nav>
           </aside>
 
-          {/* FAQ Content */}
-          <div className="lg:col-span-3">
-            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
-              {filteredFAQs.length === 0 ? (
-                <div className="p-12 text-center">
-                  <Search className="h-12 w-12 mx-auto text-gray-300 mb-4" strokeWidth={1.5} />
-                  <h3 className="text-lg font-medium text-gray-900">No questions found</h3>
-                  <p className="mt-2 text-gray-500">Try adjusting your search or category filter</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-100">
-                  {filteredFAQs.map((faq, idx) => (
-                    <details
-                      key={idx}
-                      className="group"
-                      open={expandedItems.has(idx)}
-                      onToggle={() => toggleItem(idx)}
-                    >
-                      <summary className="flex items-center justify-between p-6 cursor-pointer list-none">
-                        <h3 className="font-medium text-gray-900 pr-8">{faq.q}</h3>
-                        <ChevronDown className="h-5 w-5 text-gray-400 transition-transform group-open:rotate-180" strokeWidth={2} />
-                      </summary>
-                      <div className="px-6 pb-6 text-gray-600 border-t border-gray-100">
-                        {faq.a}
-                      </div>
-                    </details>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="min-w-0">
+            <p className="t-caption" role="status" aria-live="polite">
+              {visibleFaqs.length === 0
+                ? 'No matching questions'
+                : `${visibleFaqs.length} question${visibleFaqs.length === 1 ? '' : 's'}`}
+            </p>
 
-            <div className="mt-8 text-center">
-              <p className="text-gray-500">Didn't find what you're looking for?</p>
-              <Link to="/contact" className="mt-2 inline-flex items-center gap-2 text-black hover:underline font-medium">
-                Contact our support team
-                <ChevronRight size={16} />
-              </Link>
+            {visibleFaqs.length === 0 ? (
+              <div className="mt-6 border border-line p-8 text-center">
+                <Search
+                  size={22}
+                  strokeWidth={1.5}
+                  className="mx-auto text-ink-25"
+                  aria-hidden="true"
+                />
+                <h2 className="t-section mt-4 !text-lg">Nothing matched that search</h2>
+                <p className="t-body mx-auto mt-2 max-w-sm text-[0.875rem]">
+                  Try a different word, or clear the topic filter to see every question.
+                </p>
+                <Button
+                  className="mt-6"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setQuery('');
+                    setCategory('all');
+                  }}
+                >
+                  Show all questions
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-2 flex flex-col divide-y divide-line border-y border-line">
+                {visibleFaqs.map((faq) => (
+                  <FaqRow key={faq.q} question={faq.q} answer={faq.a} />
+                ))}
+              </div>
+            )}
+
+            <div className="mt-10 border-t border-line pt-8">
+              <h2 className="t-section !text-lg">Not answered here?</h2>
+              <p className="t-body mt-2 max-w-lg text-[0.875rem]">
+                Write to us and we will reply within one business day.
+              </p>
+              <div className="mt-5 flex flex-wrap gap-x-6 gap-y-2.5">
+                <Link
+                  to="/contact"
+                  className="group inline-flex items-center gap-1.5 text-[0.875rem] text-ink transition-colors"
+                >
+                  Contact support
+                  <ArrowRight
+                    size={13}
+                    strokeWidth={1.75}
+                    className="transition-transform group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                  />
+                </Link>
+                {RELATED_LINKS.map((link) => (
+                  <Link
+                    key={link.to}
+                    to={link.to}
+                    className="text-[0.875rem] text-ink-60 underline decoration-line underline-offset-4 transition-colors hover:text-ink hover:decoration-ink"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </>
   );
 }
