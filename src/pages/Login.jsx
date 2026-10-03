@@ -17,7 +17,7 @@ const ASIDE = {
 };
 
 export default function Login() {
-  const { login, status, sessionExpired, isDemoBackend } = useAuth();
+  const { login, status, sessionExpired: _sessionExpired, isDemoBackend } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 

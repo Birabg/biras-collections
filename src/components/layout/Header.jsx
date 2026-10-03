@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Search,
@@ -15,7 +15,7 @@ import {
 import { useCart } from '../../context/CartContext';
 import { useWishlist } from '../../context/WishlistContext';
 import { useUI } from '../../context/UIContext';
-import { useAuth, SESSION } from '../../auth/AuthContext';
+import { useAuth } from '../../auth/AuthContext';
 import { BACKOFFICE_ROLES } from '../../auth/roles';
 import SearchOverlay from './SearchOverlay';
 

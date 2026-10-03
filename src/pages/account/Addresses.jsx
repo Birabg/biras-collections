@@ -118,7 +118,7 @@ export default function Addresses() {
         toast.success('Address added');
       }
       resetForm();
-    } catch (_err) {
+    } catch {
       // Error already handled by context
     }
   };
@@ -128,7 +128,7 @@ export default function Addresses() {
     try {
       await removeAddress(id);
       toast.success('Address removed');
-    } catch (_err) {
+    } catch {
       // Error handled by context
     }
   };
@@ -137,7 +137,7 @@ export default function Addresses() {
     try {
       await setDefault(id);
       toast.success('Default address updated');
-    } catch (_err) {
+    } catch {
       // Error handled by context
     }
   };

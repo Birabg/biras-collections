@@ -115,7 +115,7 @@ export default function AdminInventory() {
             {
               key: 'action',
               header: '',
-              render: (row) =>
+              render: (_row) =>
                 canEdit ? (
                   <Button size="sm" variant="secondary" disabled>
                     Adjust
