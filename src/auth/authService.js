@@ -1,25 +1,8 @@
 /**
- * Auth service adapter.
+ * Auth service adapter — demo implementation (for reference/testing).
  * ============================================================================
- *  READ THIS BEFORE SHIPPING
- * ============================================================================
- *  There is NO backend behind this file. `createDemoAuthService()` stores a
- *  plaintext profile and session in localStorage and trusts a role string that
- *  the browser controls completely.
- *
- *  That is deliberate for UI work: it lets the route guards, role-aware
- *  navigation and every auth error state be built, demonstrated and tested
- *  against real behaviour instead of a mock.
- *
- *  It is NOT security and must never be treated as security. A user can edit
- *  localStorage and grant themselves the administrator role.
- *
- *  To go live, implement the same six methods against your API and export that
- *  as `authService`. Nothing else in the app changes — no component imports
- *  this module directly, and no component compares role strings.
- *
- *  The server must independently verify identity, role, permission and
- *  resource ownership on every request. Frontend guards are UX only.
+ *  This file now ONLY contains the demo implementation and related constants.
+ *  The production authService is exported from authService.api.js
  * ============================================================================
  */
 
@@ -41,29 +24,6 @@ export const DEMO_ACCOUNTS = [
 ];
 
 export const DEMO_CREDENTIALS = { password: 'demo1234' };
-
-/** Machine-readable failure codes. The UI maps these to human copy. */
-export const AUTH_ERRORS = {
-  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
-  EMAIL_TAKEN: 'EMAIL_TAKEN',
-  EMAIL_INVALID: 'EMAIL_INVALID',
-  WEAK_PASSWORD: 'WEAK_PASSWORD',
-  TERMS_NOT_ACCEPTED: 'TERMS_NOT_ACCEPTED',
-  ACCOUNT_LOCKED: 'ACCOUNT_LOCKED',
-  SESSION_EXPIRED: 'SESSION_EXPIRED',
-  INVALID_RESET_TOKEN: 'INVALID_RESET_TOKEN',
-  RATE_LIMITED: 'RATE_LIMITED',
-  NETWORK: 'NETWORK',
-};
-
-export class AuthError extends Error {
-  constructor(code, message, details) {
-    super(message ?? code);
-    this.name = 'AuthError';
-    this.code = code;
-    this.details = details;
-  }
-}
 
 /* ------------------------------------------------------------- demo storage */
 
@@ -180,17 +140,11 @@ export function createDemoAuthService() {
       // Same message for "no such user" and "wrong password" so the form does
       // not disclose which emails are registered.
       if (!user || user.password !== password) {
-        throw new AuthError(
-          AUTH_ERRORS.INVALID_CREDENTIALS,
-          'We could not match that email and password.',
-        );
+        throw new Error('INVALID_CREDENTIALS');
       }
 
       if (user.locked) {
-        throw new AuthError(
-          AUTH_ERRORS.ACCOUNT_LOCKED,
-          'This account has been disabled. Please contact support.',
-        );
+        throw new Error('ACCOUNT_LOCKED');
       }
 
       const safe = publicUser(user);
@@ -202,17 +156,14 @@ export function createDemoAuthService() {
       await delay(700);
 
       if (!acceptedTerms) {
-        throw new AuthError(AUTH_ERRORS.TERMS_NOT_ACCEPTED, 'Please accept the terms to continue.');
+        throw new Error('TERMS_NOT_ACCEPTED');
       }
 
       const users = readUsers();
       const normalised = normaliseEmail(email);
 
       if (users.some((u) => u.email === normalised)) {
-        throw new AuthError(
-          AUTH_ERRORS.EMAIL_TAKEN,
-          'An account already exists with that email address.',
-        );
+        throw new Error('EMAIL_TAKEN');
       }
 
       const record = {
@@ -245,13 +196,10 @@ export function createDemoAuthService() {
       return { sent: true };
     },
 
-    async resetPassword({ token, password }) {
+    async resetPassword({ token }) {
       await delay(650);
       if (!token) {
-        throw new AuthError(
-          AUTH_ERRORS.INVALID_RESET_TOKEN,
-          'This reset link is invalid or has already been used.',
-        );
+        throw new Error('INVALID_RESET_TOKEN');
       }
       return { updated: true };
     },
@@ -266,7 +214,8 @@ export function createDemoAuthService() {
 }
 
 /**
- * The app imports this binding only.
- * Swap the factory call for a real HTTP implementation and no other file changes.
+ * The app imports the production authService from authService.api.js.
+ * This file keeps the demo implementation for reference/testing.
  */
-export const authService = createDemoAuthService();
+export { authService, AuthError, AUTH_ERRORS } from './authService.api';
+export { ROLES, isRole, roleIsOneOf, roleHasPermission, permissionsFor, roleLabel } from './roles';

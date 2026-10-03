@@ -1,97 +1,207 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { getCart, setCart } from '../utils/storage';
+import { cartApi } from '../api/cart';
+import { useAuth } from '../auth/AuthContext';
 
 const CartContext = createContext(null);
+
+/**
+ * Normalizes a backend cart item to the frontend format.
+ * The backend returns cart items with their own `id` (cart item ID),
+ * which is different from the product ID. We must use this cart item ID
+ * for all mutations (update, remove).
+ */
+function normalizeCartItem(item) {
+  return {
+    id: item.id,                    // Cart item ID (used for mutations)
+    productId: item.productId,      // Product ID (for navigation)
+    variantId: item.variantId,
+    slug: item.slug,
+    name: item.name,
+    price: item.price,
+    compareAtPrice: item.compareAtPrice,
+    image: item.image,
+    quantity: item.quantity,
+    selectedSize: item.selectedSize ?? item.size ?? null,
+    selectedColor: item.selectedColor ?? item.color ?? null,
+    inStock: item.inStock,
+    stockQuantity: item.stockQuantity,
+    lineTotal: item.lineTotal,
+  };
+}
 
 export function CartProvider({ children }) {
   const [cart, setCartState] = useState([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [error, setError] = useState(null);
+  const { isAuthenticated, status: authStatus } = useAuth();
 
-  // Re-hydrate from localStorage on boot
+  // Load cart when authenticated
   useEffect(() => {
-    setCartState(getCart());
-    setIsLoaded(true);
-  }, []);
+    let cancelled = false;
 
-  const commit = useCallback((next) => {
-    setCartState(next);
-    setCart(next);
-  }, []);
+    const loadCart = async () => {
+      if (!isAuthenticated) {
+        setCartState([]);
+        setIsLoaded(true);
+        return;
+      }
+
+      try {
+        const data = await cartApi.get();
+        if (!cancelled) {
+          const items = (data.items ?? data ?? []).map(normalizeCartItem);
+          setCartState(items);
+          setError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Failed to load cart:', err);
+          setError(err.message);
+          setCartState([]);
+        }
+      } finally {
+        if (!cancelled) setIsLoaded(true);
+      }
+    };
+
+    loadCart();
+
+    return () => { cancelled = true; };
+  }, [isAuthenticated, authStatus]);
 
   const addItem = useCallback(
-    (product, quantity = 1, selectedSize = null, selectedColor = null) => {
+    async (product, quantity = 1, selectedSize = null, selectedColor = null) => {
+      // Optimistic update - we don't know the cart item ID yet, so we use a
+      // temporary composite key. The real cart item ID will come from the server.
+      const tempId = `temp-${product.id}-${selectedSize ?? ''}-${selectedColor ?? ''}`;
+      
       setCartState((prev) => {
         const index = prev.findIndex(
           (item) =>
-            item.id === product.id &&
+            item.productId === product.id &&
             item.selectedSize === selectedSize &&
             item.selectedColor === selectedColor,
         );
 
-        const next =
-          index >= 0
-            ? prev.map((item, i) =>
-                i === index ? { ...item, quantity: item.quantity + quantity } : item,
-              )
-            : [
-                ...prev,
-                {
-                  id: product.id,
-                  // Stored so cart and drawer can link to /product/:slug, which is
-                  // the route the catalogue actually resolves.
-                  slug: product.slug,
-                  name: product.name,
-                  price: product.price,
-                  compareAtPrice: product.compareAtPrice,
-                  image: product.images?.[0] ?? product.image,
-                  quantity,
-                  selectedSize,
-                  selectedColor,
-                },
-              ];
+        const optimisticItem = {
+          id: tempId,
+          productId: product.id,
+          variantId: product.variantId ?? null,
+          slug: product.slug,
+          name: product.name,
+          price: product.price,
+          compareAtPrice: product.compareAtPrice,
+          image: product.images?.[0] ?? product.image,
+          quantity,
+          selectedSize,
+          selectedColor,
+          inStock: true,
+          stockQuantity: product.stock ?? 999,
+          lineTotal: product.price * quantity,
+        };
 
-        setCart(next);
-        return next;
+        if (index >= 0) {
+          return prev.map((item, i) =>
+            i === index ? { ...item, quantity: item.quantity + quantity } : item,
+          );
+        }
+        return [...prev, optimisticItem];
       });
+
+      // Sync with server
+      try {
+        const data = await cartApi.add({
+          productId: product.id,
+          variantId: product.variantId ?? null,
+          quantity,
+        });
+        // Replace the optimistic item with the real one from server
+        setCartState((prev) =>
+          prev.map((item) =>
+            item.id.startsWith('temp-') && item.productId === product.id
+              ? normalizeCartItem(data.items.find(i => i.productId === product.id) ?? data)
+              : item,
+          ),
+        );
+        setError(null);
+      } catch (err) {
+        console.error('Failed to add to cart:', err);
+        setError(err.message);
+        // Revert optimistic update on error
+        setCartState((prev) => prev.filter((item) => !item.id.startsWith('temp-')));
+        throw err;
+      }
     },
     [],
   );
 
-  const removeItem = useCallback((id, selectedSize = null, selectedColor = null) => {
-    setCartState((prev) => {
-      const next = prev.filter(
-        (item) =>
-          !(
-            item.id === id &&
-            item.selectedSize === selectedSize &&
-            item.selectedColor === selectedColor
-          ),
-      );
-      setCart(next);
-      return next;
-    });
-  }, []);
+  const removeItem = useCallback(
+    async (cartItemId) => {
+      // Optimistic update
+      const previousCart = cart;
+      setCartState((prev) => prev.filter((item) => item.id !== cartItemId));
 
-  const updateQuantity = useCallback(
-    (id, quantity, selectedSize = null, selectedColor = null) => {
-      if (quantity <= 0) {
-        removeItem(id, selectedSize, selectedColor);
-        return;
+      try {
+        await cartApi.remove(cartItemId);
+        setError(null);
+      } catch (err) {
+        console.error('Failed to remove from cart:', err);
+        setError(err.message);
+        // Revert on error
+        setCartState(previousCart);
+        throw err;
       }
-      setCartState((prev) => {
-        const next = prev.map((item) =>
-          item.id === id && item.selectedSize === selectedSize && item.selectedColor === selectedColor
-            ? { ...item, quantity }
-            : item,
-        );
-        setCart(next);
-        return next;
-      });
     },
-    [removeItem],
+    [cart],
   );
 
-  const clearCart = useCallback(() => commit([]), [commit]);
+  const updateQuantity = useCallback(
+    async (cartItemId, quantity) => {
+      if (quantity <= 0) {
+        removeItem(cartItemId);
+        return;
+      }
+
+      // Optimistic update
+      const previousCart = cart;
+      setCartState((prev) =>
+        prev.map((item) =>
+          item.id === cartItemId ? { ...item, quantity, lineTotal: item.price * quantity } : item,
+        ),
+      );
+
+      try {
+        const data = await cartApi.update(cartItemId, { quantity });
+        // Update with real server data (includes validated lineTotal, stock checks)
+        const updatedItem = normalizeCartItem(data.items.find(i => i.id === cartItemId) ?? data);
+        setCartState((prev) =>
+          prev.map((item) => (item.id === cartItemId ? updatedItem : item)),
+        );
+        setError(null);
+      } catch (err) {
+        console.error('Failed to update quantity:', err);
+        setError(err.message);
+        // Revert on error
+        setCartState(previousCart);
+        throw err;
+      }
+    },
+    [cart, removeItem],
+  );
+
+  const clearCart = useCallback(async () => {
+    const previousCart = cart;
+    setCartState([]);
+    try {
+      await cartApi.clear();
+      setError(null);
+    } catch (err) {
+      console.error('Failed to clear cart:', err);
+      setError(err.message);
+      setCartState(previousCart);
+      throw err;
+    }
+  }, [cart]);
 
   const getItemCount = useCallback(
     () => cart.reduce((sum, item) => sum + item.quantity, 0),
@@ -99,18 +209,12 @@ export function CartProvider({ children }) {
   );
 
   const getSubtotal = useCallback(
-    () => cart.reduce((sum, item) => sum + item.price * item.quantity, 0),
+    () => cart.reduce((sum, item) => sum + item.lineTotal, 0),
     [cart],
   );
 
   const getItem = useCallback(
-    (id, selectedSize = null, selectedColor = null) =>
-      cart.find(
-        (item) =>
-          item.id === id &&
-          item.selectedSize === selectedSize &&
-          item.selectedColor === selectedColor,
-      ),
+    (cartItemId) => cart.find((item) => item.id === cartItemId),
     [cart],
   );
 
@@ -118,6 +222,7 @@ export function CartProvider({ children }) {
     () => ({
       cart,
       isLoaded,
+      error,
       addItem,
       removeItem,
       updateQuantity,
@@ -129,6 +234,7 @@ export function CartProvider({ children }) {
     [
       cart,
       isLoaded,
+      error,
       addItem,
       removeItem,
       updateQuantity,

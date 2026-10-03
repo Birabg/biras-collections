@@ -10,6 +10,7 @@ import {
 import { PublicGate, ProtectedGate, RoleGate } from './components/auth/RouteGuards';
 import { CartProvider } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
+import { AddressesProvider } from './context/AddressesContext';
 import { UIProvider } from './context/UIContext';
 import { ToastProvider } from './components/ui/Toast';
 import StorefrontLayout from './components/layout/StorefrontLayout';
@@ -266,9 +267,11 @@ function App() {
         <ToastProvider>
           <CartProvider>
             <WishlistProvider>
-              <UIProvider>
-                <AppRoutes />
-              </UIProvider>
+              <AddressesProvider>
+                <UIProvider>
+                  <AppRoutes />
+                </UIProvider>
+              </AddressesProvider>
             </WishlistProvider>
           </CartProvider>
         </ToastProvider>

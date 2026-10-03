@@ -1,0 +1,18 @@
+{
+  /*
+   * Build configuration.
+   *
+   * `tsconfig.json` typechecks everything (src, tests, seed) and emits nothing,
+   * because those files do not share one output root. This config emits only
+   * `src`, with `rootDir: src`, so `npm start` can point at `dist/server.js`
+   * instead of `dist/src/server.js`.
+   */
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "noEmit": false
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "tests", "prisma"]
+}
