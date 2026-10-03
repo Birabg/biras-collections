@@ -8,7 +8,7 @@
  */
 
 import { api } from '../api/client';
-import { ROLES, isRole } from './roles';
+import { normaliseRole } from './roles';
 
 /** Machine-readable failure codes (must match backend's ErrorCode). */
 export const AUTH_ERRORS = {
@@ -50,8 +50,9 @@ function mapBackendError(err) {
 
 function normaliseUser(record) {
   if (!record) return null;
-  const { passwordHash, ...safe } = record;
-  return { ...safe, role: isRole(safe.role) ? safe.role : ROLES.CUSTOMER };
+  // Stripped, never read: the point is to keep it out of `safe`.
+  const { passwordHash: _passwordHash, ...safe } = record;
+  return { ...safe, role: normaliseRole(safe.role) };
 }
 
 export const authService = {

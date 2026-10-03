@@ -6,7 +6,7 @@
  * ============================================================================
  */
 
-import { ROLES, isRole } from './roles';
+import { ROLES, normaliseRole } from './roles';
 
 const DEMO_FLAG = 'biras_auth_backend';
 const SESSION_KEY = 'biras_session';
@@ -86,8 +86,9 @@ export function createDemoAuthService() {
 
   function publicUser(record) {
     if (!record) return null;
-    const { password, ...safe } = record;
-    return { ...safe, role: isRole(safe.role) ? safe.role : ROLES.CUSTOMER };
+    // Stripped, never read: the point is to keep it out of `safe`.
+    const { password: _password, ...safe } = record;
+    return { ...safe, role: normaliseRole(safe.role) };
   }
 
   function issueSession(user) {
@@ -218,4 +219,12 @@ export function createDemoAuthService() {
  * This file keeps the demo implementation for reference/testing.
  */
 export { authService, AuthError, AUTH_ERRORS } from './authService.api';
-export { ROLES, isRole, roleIsOneOf, roleHasPermission, permissionsFor, roleLabel } from './roles';
+export {
+  ROLES,
+  isRole,
+  normaliseRole,
+  roleIsOneOf,
+  roleHasPermission,
+  permissionsFor,
+  roleLabel,
+} from './roles';

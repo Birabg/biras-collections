@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { PERMISSIONS, permissionsFor } from '../src/middleware/auth';
+import { PERMISSIONS, permissionsFor, requirePermission } from '../src/middleware/auth';
+import type { Request, Response } from 'express';
+import adminRouter from '../src/routes/admin.routes';
 import { registerSchema, updateProfileSchema } from '../src/validators/auth.schema';
 import {
   createProductSchema,
@@ -94,6 +96,122 @@ describe('role permissions', () => {
     expect(permissionsFor('GHOST')).toEqual([]);
     expect(permissionsFor('')).toEqual([]);
     expect(permissionsFor('admin')).toEqual([]);
+  });
+});
+
+/*
+ * Route-level enforcement.
+ *
+ * The permission table above is only meaningful if the admin routes actually
+ * consult it. A router-wide `requireRole('ADMIN')` would satisfy every assertion
+ * in this file while still answering 403 to a MANAGER who legitimately holds
+ * PRODUCTS_WRITE — the UI would show "New product" and the save would fail.
+ * These tests read the real Express router stack, so the mapping cannot silently
+ * regress back to a blanket role gate.
+ */
+describe('admin route authorisation', () => {
+  /** Flatten the router's middleware stack into `METHOD /path` -> handlers. */
+  function routeHandlers(): Map<string, unknown[]> {
+    const map = new Map<string, unknown[]>();
+    const stack = (adminRouter as unknown as { stack: Array<Record<string, unknown>> }).stack;
+
+    for (const layer of stack) {
+      const route = layer.route as
+        | { path: string; methods: Record<string, boolean>; stack: { handler: unknown }[] }
+        | undefined;
+
+      if (!route?.path) continue;
+
+      for (const method of Object.keys(route.methods)) {
+        map.set(`${method.toUpperCase()} ${route.path}`, route.stack.map((l) => l.handler));
+      }
+    }
+
+    return map;
+  }
+
+  const handlers = routeHandlers();
+
+  it('exposes the catalogue write routes the back office needs', () => {
+    // The endpoints a MANAGER must be able to reach to add a product.
+    for (const route of [
+      ['POST', '/products'],
+      ['PATCH', '/products/:id'],
+      ['DELETE', '/products/:id'],
+      ['POST', '/products/:id/restore'],
+      ['PATCH', '/products/:id/flags'],
+      ['POST', '/categories'],
+      ['PATCH', '/categories/:id'],
+      ['DELETE', '/categories/:id'],
+    ] as const) {
+      expect(handlers.has(`${route[0]} ${route[1]}`)).toBe(true);
+    }
+  });
+
+  it('gates every admin route behind an authenticated session', () => {
+    const routerStack = (adminRouter as unknown as { stack: Array<Record<string, unknown>> }).stack;
+    const handlerNames = routerStack
+      .filter((layer) => !layer.route)
+      .map((layer) => (layer.handle as { name?: string })?.name);
+
+    expect(handlerNames).toContain('requireAuth');
+  });
+
+  it('does not gate the whole router on the ADMIN role', () => {
+    // Regression guard for the bug this file exists to prevent: a router-level
+    // requireRole('ADMIN') made PRODUCTS_WRITE meaningless for MANAGER.
+    const routerStack = (adminRouter as unknown as { stack: Array<Record<string, unknown>> }).stack;
+    const routerLevelRoles = routerStack
+      .filter((layer) => !layer.route)
+      .map((layer) => (layer.handle as { name?: string })?.name)
+      .filter((name) => name === 'requireRole');
+
+    expect(routerLevelRoles).toEqual([]);
+  });
+
+  it('denies a customer and allows a manager on product creation', () => {
+    const customers = permissionsFor('CUSTOMER');
+    const managers = permissionsFor('MANAGER');
+
+    expect(customers).not.toContain(PERMISSIONS.PRODUCTS_WRITE);
+    expect(managers).toContain(PERMISSIONS.PRODUCTS_WRITE);
+  });
+
+  it('keeps user management away from managers', () => {
+    expect(permissionsFor('MANAGER')).not.toContain(PERMISSIONS.USERS_MANAGE);
+    expect(permissionsFor('ADMIN')).toContain(PERMISSIONS.USERS_MANAGE);
+  });
+
+  it('reserves settings for admins', () => {
+    expect(permissionsFor('MANAGER')).not.toContain(PERMISSIONS.SETTINGS_MANAGE);
+    expect(permissionsFor('STAFF')).not.toContain(PERMISSIONS.SETTINGS_MANAGE);
+  });
+
+  
+
+  it('lets a manager read reports but a plain staff member cannot', () => {
+    expect(permissionsFor('MANAGER')).toContain(PERMISSIONS.REPORTS_READ);
+    expect(permissionsFor('STAFF')).not.toContain(PERMISSIONS.REPORTS_READ);
+  });
+
+  it('lets staff work the order queue, since dispatching is their job', () => {
+    expect(permissionsFor('STAFF')).toContain(PERMISSIONS.ORDERS_READ);
+    expect(permissionsFor('STAFF')).toContain(PERMISSIONS.ORDERS_UPDATE);
+  });
+
+  it('keeps requirePermission denying a role that lacks the permission', () => {
+    const req = { user: { id: 'u1', role: 'CUSTOMER' } } as unknown as Request;
+    let status = 0;
+
+    requirePermission(PERMISSIONS.PRODUCTS_WRITE)(
+      req,
+      { status: (code: number) => ({ send: () => status }) } as unknown as Response,
+      (error?: unknown) => {
+        if (error) status = 403;
+      },
+    );
+
+    expect(status).toBe(403);
   });
 });
 

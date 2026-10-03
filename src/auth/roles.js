@@ -20,16 +20,18 @@ export const ROLES = {
   MANAGER: 'manager',
   /** Full administrative authority. */
   ADMIN: 'admin',
+  /** Unrestricted authority, including areas reserved for the owner. */
+  SUPER_ADMIN: 'super_admin',
 };
 
 /** Roles that belong to the storefront rather than the back office. */
 export const STOREFRONT_ROLES = [ROLES.CUSTOMER];
 /** Roles that may enter the administrative area at all. */
-export const BACKOFFICE_ROLES = [ROLES.STAFF, ROLES.MANAGER, ROLES.ADMIN];
+export const BACKOFFICE_ROLES = [ROLES.STAFF, ROLES.MANAGER, ROLES.ADMIN, ROLES.SUPER_ADMIN];
 /** Roles that may enter the administrative area with full authority. */
-export const ADMIN_ROLES = [ROLES.ADMIN];
+export const ADMIN_ROLES = [ROLES.ADMIN, ROLES.SUPER_ADMIN];
 /** Back-office roles that hold reporting authority. */
-export const REPORTING_ROLES = [ROLES.MANAGER, ROLES.ADMIN];
+export const REPORTING_ROLES = [ROLES.MANAGER, ROLES.ADMIN, ROLES.SUPER_ADMIN];
 
 /* -------------------------------------------------------------- permissions */
 
@@ -102,12 +104,36 @@ const ROLE_PERMISSIONS = {
   ],
 
   [ROLES.ADMIN]: Object.values(PERMISSIONS),
+
+  [ROLES.SUPER_ADMIN]: Object.values(PERMISSIONS),
 };
 
 /* ------------------------------------------------------------------ helpers */
 
+/**
+ * Maps a role string from any source onto this module's vocabulary.
+ *
+ * The API serialises the Prisma enum, which is upper case ('ADMIN'), while the
+ * UI stores lower case ('admin'). Comparing the raw strings silently failed and
+ * downgraded every real user to CUSTOMER, so normalisation is done once here and
+ * both auth services route through it.
+ *
+ * Unknown or missing values become CUSTOMER: the UI must never grant authority
+ * it could not verify, so the fallback is the least privileged real role.
+ */
+export function normaliseRole(value) {
+  if (typeof value !== 'string') return ROLES.CUSTOMER;
+
+  const candidate = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+
+  return Object.values(ROLES).includes(candidate) ? candidate : ROLES.CUSTOMER;
+}
+
 export function isRole(value) {
-  return Object.values(ROLES).includes(value);
+  return (
+    typeof value === 'string' &&
+    Object.values(ROLES).includes(value.trim().toLowerCase().replace(/[\s-]+/g, '_'))
+  );
 }
 
 export function permissionsFor(role) {
@@ -135,6 +161,8 @@ export function roleLabel(role) {
       return 'Manager';
     case ROLES.ADMIN:
       return 'Administrator';
+    case ROLES.SUPER_ADMIN:
+      return 'Super Administrator';
     case ROLES.GUEST:
     default:
       return 'Guest';
