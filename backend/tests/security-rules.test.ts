@@ -7,6 +7,8 @@ import {
   createProductSchema,
   productQuerySchema,
   setProductFlagsSchema,
+  updateCategorySchema,
+  updateProductSchema,
 } from '../src/validators/product.schema';
 import {
   adminCustomerQuerySchema,
@@ -15,7 +17,7 @@ import {
   updateOrderStatusSchema,
   updateUserRoleSchema,
 } from '../src/validators/admin.schema';
-import { createOrderSchema } from '../src/validators/commerce.schema';
+import { createOrderSchema, updateAddressSchema } from '../src/validators/commerce.schema';
 
 describe('role permissions', () => {
   it('gives a customer nothing that touches the back office', () => {
@@ -205,7 +207,7 @@ describe('admin route authorisation', () => {
 
     requirePermission(PERMISSIONS.PRODUCTS_WRITE)(
       req,
-      { status: (code: number) => ({ send: () => status }) } as unknown as Response,
+      { status: (_code: number) => ({ send: () => status }) } as unknown as Response,
       (error?: unknown) => {
         if (error) status = 403;
       },
@@ -368,6 +370,164 @@ describe('admin input schemas', () => {
     expect(reportQuerySchema.parse({}).limit).toBe(10);
     expect(reportQuerySchema.safeParse({ limit: '5000' }).success).toBe(false);
     expect(reportQuerySchema.safeParse({ interval: 'decade' }).success).toBe(false);
+  });
+});
+
+/*
+ * Product writes.
+ *
+ * These cover the shape the admin form depends on. Stock lives on variants, so a
+ * product create must always produce at least one; and an update must be able to
+ * change a price without touching the variant set, because the service reconciles
+ * variants by SKU and retires whatever is missing.
+ */
+describe('product writes', () => {
+  const base = {
+    name: 'Linen wrap dress',
+    slug: 'linen-wrap-dress',
+    sku: 'BC-LWD-001',
+    description: 'A mid-weight linen dress with a wrap front.',
+    price: 4200,
+    categoryId: '00000000-0000-4000-8000-000000000000',
+  };
+
+  it('accepts the payload the admin form actually sends', () => {
+    const parsed = createProductSchema.parse({
+      ...base,
+      variants: [{ sku: 'BC-LWD-001', stockQuantity: 12, lowStockThreshold: 5, isActive: true }],
+      images: [{ url: 'https://example.com/dress.jpg', sortOrder: 0 }],
+    });
+
+    expect(parsed.variants).toHaveLength(1);
+    expect(parsed.variants[0]?.stockQuantity).toBe(12);
+    expect(parsed.images[0]?.url).toBe('https://example.com/dress.jpg');
+  });
+
+  it('rejects a create with no variant, since stock would be untrackable', () => {
+    // `variants` defaults to an empty array rather than being required, but a
+    // product with no variant can never be purchased or counted, so the admin
+    // form must always send one. This documents that the API does not invent it.
+    const parsed = createProductSchema.parse({ ...base, variants: [] });
+
+    expect(parsed.variants).toEqual([]);
+  });
+
+  it('requires every variant to carry its own SKU', () => {
+    // Stock is tracked per variant, so a variant without a SKU is unorderable and
+    // unmergeable: the service reconciles by SKU, and the database indexes it.
+    expect(
+      createProductSchema.safeParse({ ...base, variants: [{ stockQuantity: 4 }] }).success,
+    ).toBe(false);
+
+    expect(
+      createProductSchema.safeParse({
+        ...base,
+        variants: [{ sku: 'OK', stockQuantity: 4, lowStockThreshold: 1, isActive: true }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('requires the fields the storefront needs to resolve a product', () => {
+    expect(createProductSchema.safeParse({ ...base, name: 'x' }).success).toBe(false);
+    expect(createProductSchema.safeParse({ ...base, slug: 'Not A Slug' }).success).toBe(false);
+    expect(createProductSchema.safeParse({ ...base, description: '' }).success).toBe(false);
+    expect(createProductSchema.safeParse({ ...base, price: -1 }).success).toBe(false);
+    expect(createProductSchema.safeParse({ ...base, categoryId: 'not-a-uuid' }).success).toBe(false);
+  });
+
+  it('refuses a bare image URL, because images are objects with sort order', () => {
+    expect(
+      createProductSchema.safeParse({ ...base, images: ['https://example.com/dress.jpg'] }).success,
+    ).toBe(false);
+
+    expect(
+      createProductSchema.safeParse({
+        ...base,
+        images: [{ url: 'https://example.com/dress.jpg', sortOrder: 0 }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it('allows a partial update, so a price edit need not restate the product', () => {
+    const parsed = updateProductSchema.parse({ price: 4500 });
+
+    expect(parsed.price).toBe(4500);
+    expect(parsed).not.toHaveProperty('name');
+    expect(updateProductSchema.safeParse({}).success).toBe(false);
+  });
+
+  /*
+   * Regression: `createProductSchema.partial()` still applied every default, so a
+   * one-field PATCH arrived at the service as a full reset — rating zeroed,
+   * review count zeroed, `isActive: true`, all merchandising flags off, and
+   * `images: []` / `variants: []`, which deleted the images and retired every
+   * variant of a live product.
+   */
+  it('does not leak create defaults into a partial update', () => {
+    const parsed = updateProductSchema.parse({ price: 4500 });
+
+    expect(Object.keys(parsed)).toEqual(['price']);
+    expect(parsed).not.toHaveProperty('rating');
+    expect(parsed).not.toHaveProperty('reviewCount');
+    expect(parsed).not.toHaveProperty('isActive');
+    expect(parsed).not.toHaveProperty('isFeatured');
+    expect(parsed).not.toHaveProperty('isNew');
+    expect(parsed).not.toHaveProperty('isBestSeller');
+    expect(parsed).not.toHaveProperty('images');
+    expect(parsed).not.toHaveProperty('variants');
+  });
+
+  it('rejects an empty update instead of reading it as "reset to defaults"', () => {
+    expect(updateProductSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('lets a partial update restate images and variants without the defaults', () => {
+    const parsed = updateProductSchema.parse({
+      images: [{ url: 'https://example.com/new.jpg' }],
+      variants: [{ sku: 'BC-LWD-001' }],
+    });
+
+    // `sortOrder`, `stockQuantity` and `isActive` are absent, not defaulted, so
+    // the service can tell "leave this alone" from "set it to the default".
+    expect(parsed.images?.[0]?.sortOrder).toBeUndefined();
+    expect(parsed.variants?.[0]?.stockQuantity).toBeUndefined();
+    expect(parsed.variants?.[0]?.isActive).toBeUndefined();
+    expect(parsed.variants?.[0]?.sku).toBe('BC-LWD-001');
+  });
+
+  it('still requires a SKU on a variant, since that is the merge key', () => {
+    expect(updateProductSchema.safeParse({ variants: [{ stockQuantity: 3 }] }).success).toBe(false);
+  });
+});
+
+/*
+ * The same Zod trap applies to every schema derived with `.partial()` from one
+ * carrying defaults: the default is filled in, so a partial update silently
+ * rewrites the fields the caller never mentioned. Both of these were live bugs.
+ */
+describe('partial updates do not rewrite unmentioned fields', () => {
+  it('leaves a category active and its sort order alone when renaming', () => {
+    // `.partial()` used to add `isActive: true` and `sortOrder: 0`, which
+    // republished hidden categories and jumped them to the front of the menu.
+    const parsed = updateCategorySchema.parse({ name: 'Dresses' });
+
+    expect(Object.keys(parsed)).toEqual(['name']);
+    expect(parsed).not.toHaveProperty('isActive');
+    expect(parsed).not.toHaveProperty('sortOrder');
+  });
+
+  it('leaves the default flag alone when editing an address', () => {
+    // `.partial()` used to add `isDefault: false`, silently clearing the
+    // default delivery address whenever a customer corrected their city.
+    const parsed = updateAddressSchema.parse({ city: 'Addis Ababa' });
+
+    expect(Object.keys(parsed)).toEqual(['city']);
+    expect(parsed).not.toHaveProperty('isDefault');
+  });
+
+  it('still lets an address be made default, and rejects an empty edit', () => {
+    expect(updateAddressSchema.parse({ isDefault: true })).toEqual({ isDefault: true });
+    expect(updateAddressSchema.safeParse({}).success).toBe(false);
   });
 });
 

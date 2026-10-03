@@ -123,6 +123,10 @@ export const adminApi = {
     return data.data;
   },
 
+  /**
+   * Returns the whole envelope, not just `data`: the product list is paginated
+   * and the caller needs `pagination` to render the pager.
+   */
   async listProducts(params = {}) {
     const search = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -130,7 +134,16 @@ export const adminApi = {
         search.append(key, value);
       }
     });
-    const data = await api.get(`/admin/products?${search.toString()}`);
+    return api.get(`/admin/products?${search.toString()}`);
+  },
+
+  /**
+   * Categories are read through the public catalogue route. The admin router
+   * only exposes the category write verbs, so `GET /admin/categories` does not
+   * exist and requesting it 404s, which leaves every category picker empty.
+   */
+  async listCategories() {
+    const data = await api.get('/products/categories');
     return data.data;
   },
 

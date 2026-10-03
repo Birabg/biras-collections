@@ -1,5 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, Edit, Trash2, RotateCcw, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  Pencil,
+  Trash2,
+  Copy,
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Package,
+  X,
+  ImagePlus,
+  AlertCircle,
+} from 'lucide-react';
 import { AdminPageHeader } from '../../components/admin/AdminLayout';
 import AdminTable, { StatusPill } from '../../components/admin/AdminTable';
 import Input from '../../components/ui/Input';
@@ -8,174 +22,333 @@ import Select from '../../components/ui/Select';
 import Modal from '../../components/ui/Modal';
 import Textarea from '../../components/ui/Textarea';
 import { useToast } from '../../components/ui/Toast';
-import { adminProductsApi, adminCategoriesApi } from '../../api/adminProducts';
+import { adminApi } from '../../api/admin';
 import { formatPrice } from '../../utils/currency';
 import { useAuth } from '../../auth/AuthContext';
 import { PERMISSIONS } from '../../auth/roles';
 import EmptyState from '../../components/ui/EmptyState';
 
-const DEFAULT_PRODUCT = {
+/*
+ * Catalogue management.
+ *
+ * The form mirrors `createProductSchema` in the backend exactly. Stock lives on
+ * variants rather than on the product, so a simple product is one variant with
+ * no size or colour — which is also why an "Add product" form with a bare stock
+ * box could never have worked.
+ */
+
+const BLANK = {
   name: '',
   slug: '',
+  sku: '',
   description: '',
   shortDescription: '',
   categoryId: '',
-  price: 0,
-  compareAtPrice: 0,
-  cost: 0,
-  sku: '',
-  barcode: '',
-  trackInventory: true,
-  stock: 0,
-  lowStockThreshold: 5,
-  weight: 0,
-  images: [],
+  price: '',
+  compareAtPrice: '',
+  subcategory: '',
+  badge: '',
+  stockQuantity: '0',
+  lowStockThreshold: '5',
+  imageUrl: '',
   isActive: true,
   isFeatured: false,
-  requiresShipping: true,
-  metaTitle: '',
-  metaDescription: '',
+  isNew: false,
+  isBestSeller: false,
 };
+
+/** Derive a URL slug the way the API's regex expects: lowercase, hyphen-joined. */
+function slugify(value) {
+  return String(value)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function toProduct(row) {
+  return {
+    name: row.name ?? '',
+    slug: row.slug ?? '',
+    sku: row.sku ?? '',
+    description: row.description ?? '',
+    shortDescription: row.shortDescription ?? '',
+    // The API nests the category; the form wants a flat id.
+    categoryId: row.category?.id ?? '',
+    price: row.price != null ? String(row.price) : '',
+    compareAtPrice: row.compareAtPrice != null ? String(row.compareAtPrice) : '',
+    subcategory: row.subcategory ?? '',
+    badge: row.badge ?? '',
+    stockQuantity: String(row.variants?.[0]?.stockQuantity ?? row.stock ?? 0),
+    lowStockThreshold: String(row.variants?.[0]?.lowStockThreshold ?? 5),
+    imageUrl: row.images?.[0] ?? '',
+    isActive: row.isActive ?? true,
+    isFeatured: row.isFeatured ?? false,
+    isNew: row.isNew ?? false,
+    isBestSeller: row.isBestSeller ?? false,
+  };
+}
+
+/** Shape the flat form into the exact payload the API validates. */
+function toPayload(form) {
+  const image = form.imageUrl.trim();
+
+  return {
+    name: form.name.trim(),
+    slug: form.slug.trim(),
+    sku: form.sku.trim(),
+    description: form.description.trim(),
+    shortDescription: form.shortDescription.trim() || null,
+    categoryId: form.categoryId,
+    price: Number(form.price),
+    compareAtPrice: form.compareAtPrice === '' ? null : Number(form.compareAtPrice),
+    subcategory: form.subcategory.trim() || null,
+    badge: form.badge.trim() || null,
+    isActive: form.isActive,
+    isFeatured: form.isFeatured,
+    isNew: form.isNew,
+    isBestSeller: form.isBestSeller,
+    images: image ? [{ url: image, sortOrder: 0 }] : [],
+    variants: [
+      {
+        sku: form.sku.trim(),
+        stockQuantity: Number(form.stockQuantity) || 0,
+        lowStockThreshold: Number(form.lowStockThreshold) || 0,
+        isActive: form.isActive,
+      },
+    ],
+  };
+}
+
+function validate(form) {
+  const errors = {};
+
+  if (form.name.trim().length < 2) errors.name = 'Enter a name of at least 2 characters.';
+  if (form.sku.trim().length < 2) errors.sku = 'Enter a SKU of at least 2 characters.';
+
+  const slug = form.slug.trim();
+  if (slug.length < 2) {
+    errors.slug = 'Enter a URL slug.';
+  } else if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+    errors.slug = 'Use lowercase letters, numbers and single hyphens.';
+  }
+
+  if (!form.categoryId) errors.categoryId = 'Choose a category.';
+  if (form.description.trim().length < 1) errors.description = 'Enter a description.';
+
+  if (form.price === '' || Number.isNaN(Number(form.price)) || Number(form.price) < 0) {
+    errors.price = 'Enter a price of 0 or more.';
+  }
+
+  const compareAt = form.compareAtPrice;
+  if (compareAt !== '' && compareAt !== null) {
+    const parsed = Number(compareAt);
+    if (Number.isNaN(parsed) || parsed < 0) {
+      errors.compareAtPrice = 'Enter a valid compare-at price.';
+    } else if (form.price !== '' && parsed > 0 && parsed < Number(form.price)) {
+      errors.compareAtPrice = 'Compare-at price should be higher than the price.';
+    }
+  }
+
+  if (form.imageUrl.trim() && !/^https?:\/\/\S+$/i.test(form.imageUrl.trim())) {
+    errors.imageUrl = 'Enter a full image URL starting with http:// or https://.';
+  }
+
+  const stock = Number(form.stockQuantity);
+  if (form.stockQuantity === '' || Number.isNaN(stock) || stock < 0) {
+    errors.stockQuantity = 'Enter a stock count of 0 or more.';
+  }
+
+  return errors;
+}
 
 export default function AdminProducts() {
   const { can } = useAuth();
   const toast = useToast();
+
+  const [rows, setRows] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, totalPages: 0, total: 0 });
+
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize] = useState(20);
-  const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
-  const [pagination, setPagination] = useState({ total: 0, totalPages: 0 });
+  const limit = 20;
+
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [pendingId, setPendingId] = useState(null);
+
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState(BLANK);
+  const [errors, setErrors] = useState({});
   const [isSaving, setIsSaving] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingProduct, setEditingProduct] = useState(null);
-  const [formData, setFormData] = useState(DEFAULT_PRODUCT);
-  const [formErrors, setFormErrors] = useState({});
-  const [activeTab, setActiveTab] = useState('basic');
+  const [formError, setFormError] = useState(null);
 
   const canEdit = can(PERMISSIONS.PRODUCTS_WRITE);
 
-  const loadProducts = useCallback(async () => {
+  const load = useCallback(async () => {
     setIsLoading(true);
+    setLoadError(null);
+
     try {
-      const data = await adminProductsApi.list({ page, limit: pageSize, search: query, includeInactive: true });
-      setProducts(data.data ?? []);
-      setPagination({ total: data.pagination?.total ?? 0, totalPages: data.pagination?.totalPages ?? 0 });
+      const payload = await adminApi.listProducts({ page, limit, search: query });
+      setRows(payload?.data ?? []);
+      setPagination(payload?.pagination ?? { page: 1, totalPages: 0, total: 0 });
     } catch (err) {
-      toast.error('Failed to load products', { message: err.message });
-      setProducts([]);
+      setRows([]);
+      setLoadError(err);
     } finally {
       setIsLoading(false);
     }
-  }, [page, pageSize, query, toast]);
-
-  const loadCategories = useCallback(async () => {
-    try {
-      const data = await adminCategoriesApi.list();
-      setCategories(data ?? []);
-    } catch (err) {
-      toast.error('Failed to load categories', { message: err.message });
-    }
-  }, [toast]);
+  }, [page, limit, query]);
 
   useEffect(() => {
-    loadProducts();
-    loadCategories();
-  }, [loadProducts, loadCategories]);
+    load();
+  }, [load]);
 
-  const validateForm = () => {
-    const errors = {};
-    if (!formData.name.trim()) errors.name = 'Product name is required';
-    if (!formData.slug.trim()) errors.slug = 'Slug is required';
-    if (!formData.categoryId) errors.categoryId = 'Category is required';
-    if (formData.price < 0) errors.price = 'Price must be positive';
-    if (formData.stock < 0) errors.stock = 'Stock cannot be negative';
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+  useEffect(() => {
+    let active = true;
+
+    adminApi
+      .listCategories()
+      .then((data) => {
+        if (active) setCategories(data ?? []);
+      })
+      .catch(() => {
+        if (active) setCategories([]);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  /* ------------------------------------------------------------ form state --*/
+
+  const setField = (field, value) => {
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+
+      // Keep the slug in step with the name until the user edits it by hand,
+      // so the common case never needs a second thought.
+      if (field === 'name') {
+        const slugIsUntouched =
+          !prev.slug || prev.slug === slugify(prev.name) || prev.slug === BLANK.slug;
+        if (slugIsUntouched) next.slug = slugify(value);
+      }
+
+      return next;
+    });
+
+    if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
+    if (formError) setFormError(null);
   };
 
-  const handleSubmit = async (event) => {
+  const openCreate = () => {
+    setEditing(null);
+    setForm(BLANK);
+    setErrors({});
+    setFormError(null);
+    setIsFormOpen(true);
+  };
+
+  const openEdit = (row) => {
+    setEditing(row);
+    setForm(toProduct(row));
+    setErrors({});
+    setFormError(null);
+    setIsFormOpen(true);
+  };
+
+  const closeForm = () => {
+    if (isSaving) return;
+    setIsFormOpen(false);
+  };
+
+  const submit = async (event) => {
     event.preventDefault();
-    if (!validateForm()) return;
+
+    const found = validate(form);
+    setErrors(found);
+    if (Object.keys(found).length > 0) return;
 
     setIsSaving(true);
+    setFormError(null);
+
     try {
-      if (editingProduct) {
-        await adminProductsApi.update(editingProduct.id, formData);
-        toast.success('Product updated');
+      const payload = toPayload(form);
+
+      if (editing) {
+        await adminApi.updateProduct(editing.id, payload);
+        toast.success('Product updated', { message: `${payload.name} has been saved.` });
       } else {
-        await adminProductsApi.create(formData);
-        toast.success('Product created');
+        await adminApi.createProduct(payload);
+        toast.success('Product created', { message: `${payload.name} is now in the catalogue.` });
       }
-      setModalOpen(false);
-      loadProducts();
+
+      setIsFormOpen(false);
+      await load();
     } catch (err) {
-      toast.error('Failed to save product', { message: err.message });
+      // Surface the server's own message: a slug collision or bad category is
+      // the common case and the generic string hides it.
+      setFormError(err?.message ?? 'The product could not be saved.');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleEdit = (product) => {
-    setEditingProduct(product);
-    setFormData({
-      ...DEFAULT_PRODUCT,
-      ...product,
-      categoryId: product.categoryId ?? '',
-      images: product.images ?? [],
-    });
-    setFormErrors({});
-    setModalOpen(true);
-  };
+  /* ------------------------------------------------------------- row verbs --*/
 
-  const handleDelete = async (product) => {
-    if (!window.confirm(`Delete "${product.name}"? This can be undone.`)) return;
+  const toggleFlag = async (row, flag) => {
+    setPendingId(row.id);
     try {
-      await adminProductsApi.delete(product.id);
-      toast.success('Product deleted (soft delete)');
-      loadProducts();
+      await adminApi.setProductFlags(row.id, { [flag]: !row[flag] });
+      await load();
     } catch (err) {
-      toast.error('Failed to delete product', { message: err.message });
+      toast.error('Could not update product', { message: err.message });
+    } finally {
+      setPendingId(null);
     }
   };
 
-  const handleRestore = async (product) => {
+  const remove = async (row) => {
+    if (!window.confirm(`Archive "${row.name}"? It will be hidden from the storefront.`)) return;
+
+    setPendingId(row.id);
     try {
-      await adminProductsApi.restore(product.id);
-      toast.success('Product restored');
-      loadProducts();
+      await adminApi.deleteProduct(row.id);
+      toast.success('Product archived');
+      await load();
     } catch (err) {
-      toast.error('Failed to restore product', { message: err.message });
+      toast.error('Could not archive product', { message: err.message });
+    } finally {
+      setPendingId(null);
     }
   };
 
-  const handleDuplicate = async (product) => {
+  const duplicate = async (row) => {
+    setPendingId(row.id);
     try {
-      const duplicate = { ...product, name: `${product.name} (Copy)`, slug: `${product.slug}-copy`, isActive: false };
-      delete duplicate.id;
-      delete duplicate.createdAt;
-      delete duplicate.updatedAt;
-      await adminProductsApi.create(duplicate);
-      toast.success('Product duplicated');
-      loadProducts();
+      // A fresh slug and SKU are required: both are unique.
+      const stamp = Date.now().toString(36);
+      await adminApi.createProduct({
+        ...toPayload(toProduct(row)),
+        name: `${row.name} (copy)`,
+        slug: `${row.slug}-copy-${stamp}`,
+        sku: `${row.sku}-COPY-${stamp}`.slice(0, 60),
+        isActive: false,
+      });
+      toast.success('Product duplicated', { message: 'The copy is archived until you activate it.' });
+      await load();
     } catch (err) {
-      toast.error('Failed to duplicate product', { message: err.message });
+      toast.error('Could not duplicate product', { message: err.message });
+    } finally {
+      setPendingId(null);
     }
   };
 
-  const openCreateModal = () => {
-    setEditingProduct(null);
-    setFormData(DEFAULT_PRODUCT);
-    setFormErrors({});
-    setActiveTab('basic');
-    setModalOpen(true);
-  };
-
-  const handleChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    if (formErrors[field]) setFormErrors((prev) => ({ ...prev, [field]: undefined }));
-  };
+  /* ---------------------------------------------------------------- render --*/
 
   const columns = [
     {
@@ -183,11 +356,18 @@ export default function AdminProducts() {
       header: 'Product',
       render: (row) => (
         <span className="flex items-center gap-3">
-          <img src={row.images?.[0]} alt="" className="size-9 shrink-0 object-cover" loading="lazy" />
-          <span className="flex flex-col">
-            <span className="font-medium text-ink">{row.name}</span>
-            <span className="text-[0.75rem] text-ink-40">/{row.slug}</span>
-            {row.deletedAt && <span className="text-[0.625rem] text-error">Deleted</span>}
+          <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden border border-line bg-sand">
+            {row.images?.[0] ? (
+              <img src={row.images[0]} alt="" className="size-full object-cover" loading="lazy" />
+            ) : (
+              <Package size={16} strokeWidth={1.5} className="text-ink-25" aria-hidden="true" />
+            )}
+          </span>
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate font-medium text-ink">{row.name}</span>
+            <span className="truncate text-[0.75rem] text-ink-40">
+              {row.sku} · /{row.slug}
+            </span>
           </span>
         </span>
       ),
@@ -195,66 +375,131 @@ export default function AdminProducts() {
     {
       key: 'category',
       header: 'Category',
-      render: (row) => (
-        <span className="capitalize">
-          {categories.find((c) => c.id === row.categoryId)?.name ?? row.categoryId ?? '—'}
-        </span>
-      ),
+      render: (row) => <span className="text-ink-60">{row.category?.name ?? '—'}</span>,
     },
     {
       key: 'price',
       header: 'Price',
-      render: (row) => <span className="tabular-nums">{formatPrice(row.price)}</span>,
+      render: (row) => (
+        <span className="flex flex-col tabular-nums">
+          <span className="font-medium text-ink">{formatPrice(row.price)}</span>
+          {row.compareAtPrice != null && row.compareAtPrice > row.price && (
+            <span className="text-[0.6875rem] text-ink-40 line-through">
+              {formatPrice(row.compareAtPrice)}
+            </span>
+          )}
+        </span>
+      ),
     },
     {
       key: 'stock',
       header: 'Stock',
-      render: (row) => <span className="tabular-nums">{row.stock}</span>,
+      render: (row) => {
+        const stock = row.stock ?? 0;
+        const tone = stock === 0 ? 'text-error' : stock <= 5 ? 'text-warning' : 'text-ink-80';
+        return <span className={`tabular-nums ${tone}`}>{stock}</span>;
+      },
     },
     {
       key: 'status',
       header: 'Status',
-      render: (row) => {
-        if (row.deletedAt) return <StatusPill value="Deleted" />;
-        return <StatusPill value={row.isActive ? 'Active' : 'Disabled'} />;
-      },
+      render: (row) => (
+        <span className="flex flex-wrap gap-1">
+          <StatusPill value={row.isActive ? 'Active' : 'Disabled'} />
+          {row.isFeatured && <StatusPill value="Featured" />}
+        </span>
+      ),
     },
     {
       key: 'actions',
       header: '',
-      render: (row) => (
-        <div className="flex items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={() => handleEdit(row)} title="Edit" aria-label="Edit">
-            <Edit size={14} strokeWidth={2} />
-          </Button>
-          {row.deletedAt ? (
-            <Button size="sm" variant="ghost" onClick={() => handleRestore(row)} title="Restore" aria-label="Restore">
-              <RotateCcw size={14} strokeWidth={2} />
-            </Button>
-          ) : (
-            <>
-              <Button size="sm" variant="ghost" onClick={() => handleDuplicate(row)} title="Duplicate" aria-label="Duplicate">
-                <Plus size={14} strokeWidth={2} />
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => handleDelete(row)} title="Delete" aria-label="Delete" className="text-error hover:bg-error-soft">
-                <Trash2 size={14} strokeWidth={2} />
-              </Button>
-            </>
-          )}
-        </div>
-      ),
+      align: 'right',
+      render: (row) => {
+        if (!canEdit) return <span className="text-ink-25">—</span>;
+
+        const busy = pendingId === row.id;
+
+        return (
+          <span className="flex items-center justify-end gap-1">
+            {busy ? (
+              <Loader2 size={15} className="animate-spin text-ink-40" aria-label="Working" />
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => openEdit(row)}
+                  className="rounded-[2px] p-2 text-ink-40 transition-colors hover:bg-sand hover:text-ink"
+                  aria-label={`Edit ${row.name}`}
+                  title="Edit"
+                >
+                  <Pencil size={15} strokeWidth={1.75} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => toggleFlag(row, 'isActive')}
+                  className="rounded-[2px] p-2 text-ink-40 transition-colors hover:bg-sand hover:text-ink"
+                  aria-label={row.isActive ? `Disable ${row.name}` : `Enable ${row.name}`}
+                  title={row.isActive ? 'Disable' : 'Enable'}
+                >
+                  {row.isActive ? (
+                    <X size={15} strokeWidth={1.75} />
+                  ) : (
+                    <RotateCcw size={15} strokeWidth={1.75} />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => toggleFlag(row, 'isFeatured')}
+                  aria-pressed={row.isFeatured}
+                  className={`rounded-[2px] p-2 transition-colors hover:bg-sand ${
+                    row.isFeatured ? 'text-warning' : 'text-ink-25 hover:text-ink'
+                  }`}
+                  aria-label={`${row.isFeatured ? 'Unfeature' : 'Feature'} ${row.name}`}
+                  title={row.isFeatured ? 'Remove from featured' : 'Feature on the home page'}
+                >
+                  <Package size={15} strokeWidth={1.75} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => duplicate(row)}
+                  className="rounded-[2px] p-2 text-ink-40 transition-colors hover:bg-sand hover:text-ink"
+                  aria-label={`Duplicate ${row.name}`}
+                  title="Duplicate"
+                >
+                  <Copy size={15} strokeWidth={1.75} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => remove(row)}
+                  className="rounded-[2px] p-2 text-ink-40 transition-colors hover:bg-error-soft hover:text-error"
+                  aria-label={`Archive ${row.name}`}
+                  title="Archive"
+                >
+                  <Trash2 size={15} strokeWidth={1.75} />
+                </button>
+              </>
+            )}
+          </span>
+        );
+      },
     },
   ];
+
+  const showFrom = pagination.total === 0 ? 0 : (pagination.page - 1) * limit + 1;
+  const showTo = Math.min(pagination.page * limit, pagination.total);
 
   return (
     <>
       <AdminPageHeader
         title="Products"
-        description="Manage your product catalogue."
+        description="Everything in the storefront catalogue. Changes go live immediately."
         actions={
           canEdit ? (
-            <Button size="sm" onClick={openCreateModal}>
-              <Plus size={14} strokeWidth={2} aria-hidden="true" />
+            <Button size="sm" onClick={openCreate} iconLeft={<Plus size={14} strokeWidth={2} />}>
               New product
             </Button>
           ) : (
@@ -263,244 +508,309 @@ export default function AdminProducts() {
         }
       />
 
-      <div className="mb-4 max-w-md">
-        <Input
-          type="search"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setPage(1);
-          }}
-          placeholder="Search products"
-          icon={<Search size={15} strokeWidth={1.75} />}
-          aria-label="Search products"
-        />
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="w-full sm:max-w-xs">
+          <Input
+            type="search"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(1);
+            }}
+            placeholder="Search by name or SKU"
+            icon={<Search size={15} strokeWidth={1.75} />}
+            aria-label="Search products"
+          />
+        </div>
+
+        {pagination.total > 0 && (
+          <p className="text-[0.8125rem] text-ink-40 sm:ml-auto">
+            {showFrom}–{showTo} of {pagination.total}
+          </p>
+        )}
       </div>
 
       {isLoading ? (
         <div className="flex h-64 items-center justify-center">
-          <Loader2 className="animate-spin h-8 w-8 text-ink-40" />
+          <Loader2 size={26} className="animate-spin text-ink-25" aria-label="Loading products" />
         </div>
-      ) : products.length === 0 ? (
+      ) : loadError ? (
+        <div className="flex flex-col items-center gap-4 border border-error/25 bg-error-soft px-6 py-12 text-center">
+          <AlertCircle size={24} className="text-error" aria-hidden="true" />
+          <div>
+            <p className="font-medium text-ink">The catalogue could not be loaded</p>
+            <p className="mt-1 text-[0.8125rem] text-ink-60">{loadError.message}</p>
+          </div>
+          <Button size="sm" variant="secondary" onClick={load}>
+            Try again
+          </Button>
+        </div>
+      ) : rows.length === 0 ? (
         <EmptyState
-          icon={Search}
-          title="No products found"
-          description={query ? `Nothing matches "${query}".` : 'Add your first product to get started.'}
-          actionLabel={canEdit ? 'Add product' : undefined}
-          onAction={openCreateModal}
-          className="mt-8 border border-line"
+          icon={query ? Search : Package}
+          title={query ? 'No products match' : 'No products yet'}
+          description={
+            query
+              ? `Nothing in the catalogue matches “${query}”.`
+              : canEdit
+                ? 'Add your first product and it will appear in the shop straight away.'
+                : 'The catalogue is empty.'
+          }
+          actionLabel={canEdit && !query ? 'Add your first product' : undefined}
+          onAction={openCreate}
+          className="border border-line"
         />
       ) : (
         <>
-          <AdminTable rows={products} rowKey={(row) => row.id} columns={columns} />
+          <AdminTable rows={rows} rowKey={(row) => row.id} columns={columns} />
+
           {pagination.totalPages > 1 && (
-            <div className="mt-6 flex items-center justify-between">
-              <p className="text-[0.8125rem] text-ink-60">
-                Showing {Math.min((page - 1) * pageSize + 1, pagination.total)}–{Math.min(page * pageSize, pagination.total)} of {pagination.total}
-              </p>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="tertiary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-                  <ChevronLeft size={14} strokeWidth={2} />
-                </Button>
-                <span className="px-3 text-[0.8125rem] text-ink">Page {page} of {pagination.totalPages}</span>
-                <Button size="sm" variant="tertiary" onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))} disabled={page === pagination.totalPages}>
-                  <ChevronRight size={14} strokeWidth={2} />
-                </Button>
-              </div>
-            </div>
+            <nav
+              className="mt-5 flex items-center justify-between border-t border-line pt-4"
+              aria-label="Pagination"
+            >
+              <Button
+                size="sm"
+                variant="tertiary"
+                iconLeft={<ChevronLeft size={14} strokeWidth={2} />}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={pagination.page <= 1}
+              >
+                Previous
+              </Button>
+
+              <span className="text-[0.8125rem] text-ink-60">
+                Page {pagination.page} of {pagination.totalPages}
+              </span>
+
+              <Button
+                size="sm"
+                variant="tertiary"
+                iconRight={<ChevronRight size={14} strokeWidth={2} />}
+                onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+                disabled={pagination.page >= pagination.totalPages}
+              >
+                Next
+              </Button>
+            </nav>
           )}
         </>
       )}
 
       <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={editingProduct ? 'Edit product' : 'New product'}
+        isOpen={isFormOpen}
+        onClose={closeForm}
+        title={editing ? 'Edit product' : 'New product'}
         size="lg"
       >
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="flex gap-2 border-b border-line pb-4">
-            {['basic', 'pricing', 'inventory', 'seo'].map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 text-sm font-medium rounded-t transition-colors ${
-                  activeTab === tab
-                    ? 'bg-ink text-paper'
-                    : 'text-ink-40 hover:text-ink hover:bg-sand/50'
-                }`}
-              >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </button>
-            ))}
-          </div>
-
-          {activeTab === 'basic' && (
-            <div className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Input
-                  label="Product name"
-                  value={formData.name}
-                  onChange={(e) => handleChange('name', e.target.value)}
-                  error={formErrors.name}
-                  required
-                  placeholder="Enter product name"
-                />
-                <Input
-                  label="Slug (URL handle)"
-                  value={formData.slug}
-                  onChange={(e) => handleChange('slug', e.target.value.toLowerCase().replace(/\s+/g, '-'))}
-                  error={formErrors.slug}
-                  required
-                  placeholder="auto-generated-from-name"
-                />
-              </div>
-              <Select
-                label="Category"
-                value={formData.categoryId}
-                onChange={(e) => handleChange('categoryId', e.target.value)}
-                error={formErrors.categoryId}
-                required
-              >
-                <option value="">Select category</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </option>
-                ))}
-              </Select>
-              <Textarea
-                label="Description"
-                value={formData.description}
-                onChange={(e) => handleChange('description', e.target.value)}
-                placeholder="Full product description"
-                rows={4}
-              />
-              <Textarea
-                label="Short description"
-                value={formData.shortDescription}
-                onChange={(e) => handleChange('shortDescription', e.target.value)}
-                placeholder="Brief summary for listings"
-                rows={2}
-              />
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-2 text-[0.875rem] text-ink">
-                  <input type="checkbox" checked={formData.isActive} onChange={(e) => handleChange('isActive', e.target.checked)} className="size-4 accent-ink" />
-                  Active
-                </label>
-                <label className="flex items-center gap-2 text-[0.875rem] text-ink">
-                  <input type="checkbox" checked={formData.isFeatured} onChange={(e) => handleChange('isFeatured', e.target.checked)} className="size-4 accent-ink" />
-                  Featured
-                </label>
-              </div>
-            </div>
+        <form onSubmit={submit} noValidate className="flex flex-col gap-6">
+          {formError && (
+            <p
+              role="alert"
+              className="flex items-start gap-2 border border-error/25 bg-error-soft px-4 py-3 text-[0.8125rem] text-error"
+            >
+              <AlertCircle size={16} className="mt-px shrink-0" aria-hidden="true" />
+              {formError}
+            </p>
           )}
 
-          {activeTab === 'pricing' && (
-            <div className="space-y-4 grid gap-4 sm:grid-cols-2">
+          <fieldset className="flex flex-col gap-4">
+            <legend className="t-eyebrow mb-1 text-ink-40">The basics</legend>
+
+            <Input
+              label="Product name"
+              value={form.name}
+              onChange={(e) => setField('name', e.target.value)}
+              error={errors.name}
+              required
+              placeholder="Linen wrap dress"
+              autoFocus
+            />
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Input
+                label="URL slug"
+                value={form.slug}
+                onChange={(e) => setField('slug', e.target.value)}
+                error={errors.slug}
+                required
+                placeholder="linen-wrap-dress"
+                hint={errors.slug ? undefined : `Storefront link: /product/${form.slug || '…'}`}
+              />
+              <Input
+                label="SKU"
+                value={form.sku}
+                onChange={(e) => setField('sku', e.target.value)}
+                error={errors.sku}
+                required
+                placeholder="BC-LWD-001"
+              />
+            </div>
+
+            <Select
+              label="Category"
+              value={form.categoryId}
+              onChange={(e) => setField('categoryId', e.target.value)}
+              error={errors.categoryId}
+              required
+            >
+              <option value="">Choose a category</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </Select>
+
+            {categories.length === 0 && (
+              <p className="-mt-2 text-[0.75rem] text-ink-40">
+                No categories are available yet. A category must exist before a product can be
+                filed under one.
+              </p>
+            )}
+
+            <Textarea
+              label="Description"
+              value={form.description}
+              onChange={(e) => setField('description', e.target.value)}
+              error={errors.description}
+              rows={4}
+              required
+              placeholder="What it is, how it fits, how to care for it."
+            />
+
+            <Textarea
+              label="Short description"
+              value={form.shortDescription}
+              onChange={(e) => setField('shortDescription', e.target.value)}
+              rows={2}
+              hint="Optional. One line shown on product cards."
+            />
+          </fieldset>
+
+          <fieldset className="flex flex-col gap-4 border-t border-line pt-6">
+            <legend className="t-eyebrow mb-1 text-ink-40">Price and stock</legend>
+
+            <div className="grid gap-4 sm:grid-cols-2">
               <Input
                 label="Price"
                 type="number"
                 min="0"
                 step="0.01"
-                value={formData.price}
-                onChange={(e) => handleChange('price', parseFloat(e.target.value) || 0)}
-                error={formErrors.price}
+                inputMode="decimal"
+                value={form.price}
+                onChange={(e) => setField('price', e.target.value)}
+                error={errors.price}
                 required
               />
               <Input
-                label="Compare at price"
+                label="Compare-at price"
                 type="number"
                 min="0"
                 step="0.01"
-                value={formData.compareAtPrice}
-                onChange={(e) => handleChange('compareAtPrice', parseFloat(e.target.value) || 0)}
+                inputMode="decimal"
+                value={form.compareAtPrice}
+                onChange={(e) => setField('compareAtPrice', e.target.value)}
+                error={errors.compareAtPrice}
+                hint={errors.compareAtPrice ? undefined : 'Optional. Shows the item as reduced.'}
               />
               <Input
-                label="Cost price"
+                label="Stock on hand"
                 type="number"
                 min="0"
-                step="0.01"
-                value={formData.cost}
-                onChange={(e) => handleChange('cost', parseFloat(e.target.value) || 0)}
+                step="1"
+                inputMode="numeric"
+                value={form.stockQuantity}
+                onChange={(e) => setField('stockQuantity', e.target.value)}
+                error={errors.stockQuantity}
               />
               <Input
-                label="SKU"
-                value={formData.sku}
-                onChange={(e) => handleChange('sku', e.target.value)}
-                placeholder="Stock keeping unit"
-              />
-              <Input
-                label="Barcode"
-                value={formData.barcode}
-                onChange={(e) => handleChange('barcode', e.target.value)}
+                label="Low-stock alert at"
+                type="number"
+                min="0"
+                step="1"
+                inputMode="numeric"
+                value={form.lowStockThreshold}
+                onChange={(e) => setField('lowStockThreshold', e.target.value)}
+                hint="Optional. Flags the item as low in the inventory report."
               />
             </div>
-          )}
+          </fieldset>
 
-          {activeTab === 'inventory' && (
-            <div className="space-y-4 grid gap-4 sm:grid-cols-2">
+          <fieldset className="flex flex-col gap-4 border-t border-line pt-6">
+            <legend className="t-eyebrow mb-1 text-ink-40">Presentation</legend>
+
+            <Input
+              label="Image URL"
+              value={form.imageUrl}
+              onChange={(e) => setField('imageUrl', e.target.value)}
+              error={errors.imageUrl}
+              placeholder="https://…"
+              icon={<ImagePlus size={15} strokeWidth={1.75} />}
+              hint={errors.imageUrl ? undefined : 'Optional. The first image is used on cards.'}
+            />
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Input
+                label="Subcategory"
+                value={form.subcategory}
+                onChange={(e) => setField('subcategory', e.target.value)}
+                placeholder="Optional"
+              />
+              <Input
+                label="Badge"
+                value={form.badge}
+                onChange={(e) => setField('badge', e.target.value)}
+                placeholder="e.g. New"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-x-6 gap-y-3">
               <label className="flex items-center gap-2 text-[0.875rem] text-ink">
-                <input type="checkbox" checked={formData.trackInventory} onChange={(e) => handleChange('trackInventory', e.target.checked)} className="size-4 accent-ink" />
-                Track inventory
+                <input
+                  type="checkbox"
+                  checked={form.isActive}
+                  onChange={(e) => setField('isActive', e.target.checked)}
+                  className="size-4 accent-ink"
+                />
+                Active
               </label>
-              <Input
-                label="Stock quantity"
-                type="number"
-                min="0"
-                value={formData.stock}
-                onChange={(e) => handleChange('stock', parseInt(e.target.value, 10) || 0)}
-                error={formErrors.stock}
-              />
-              <Input
-                label="Low stock threshold"
-                type="number"
-                min="0"
-                value={formData.lowStockThreshold}
-                onChange={(e) => handleChange('lowStockThreshold', parseInt(e.target.value, 10) || 5)}
-              />
-              <Input
-                label="Weight (kg)"
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.weight}
-                onChange={(e) => handleChange('weight', parseFloat(e.target.value) || 0)}
-              />
               <label className="flex items-center gap-2 text-[0.875rem] text-ink">
-                <input type="checkbox" checked={formData.requiresShipping} onChange={(e) => handleChange('requiresShipping', e.target.checked)} className="size-4 accent-ink" />
-                Requires shipping
+                <input
+                  type="checkbox"
+                  checked={form.isFeatured}
+                  onChange={(e) => setField('isFeatured', e.target.checked)}
+                  className="size-4 accent-ink"
+                />
+                Featured
+              </label>
+              <label className="flex items-center gap-2 text-[0.875rem] text-ink">
+                <input
+                  type="checkbox"
+                  checked={form.isNew}
+                  onChange={(e) => setField('isNew', e.target.checked)}
+                  className="size-4 accent-ink"
+                />
+                New arrival
+              </label>
+              <label className="flex items-center gap-2 text-[0.875rem] text-ink">
+                <input
+                  type="checkbox"
+                  checked={form.isBestSeller}
+                  onChange={(e) => setField('isBestSeller', e.target.checked)}
+                  className="size-4 accent-ink"
+                />
+                Best seller
               </label>
             </div>
-          )}
+          </fieldset>
 
-          {activeTab === 'seo' && (
-            <div className="space-y-4">
-              <Input
-                label="Meta title"
-                value={formData.metaTitle}
-                onChange={(e) => handleChange('metaTitle', e.target.value)}
-                placeholder="SEO title (max 60 chars)"
-                maxLength={60}
-              />
-              <Textarea
-                label="Meta description"
-                value={formData.metaDescription}
-                onChange={(e) => handleChange('metaDescription', e.target.value)}
-                placeholder="SEO description (max 160 chars)"
-                rows={2}
-                maxLength={160}
-              />
-            </div>
-          )}
-
-          <div className="flex flex-col gap-3 sm:flex-row justify-end pt-4 border-t border-line">
-            <Button type="button" variant="tertiary" onClick={() => setModalOpen(false)} disabled={isSaving}>
+          <div className="flex flex-col-reverse gap-3 border-t border-line pt-6 sm:flex-row sm:justify-end">
+            <Button type="button" variant="tertiary" size="lg" onClick={closeForm} disabled={isSaving}>
               Cancel
             </Button>
             <Button type="submit" size="lg" loading={isSaving}>
-              {editingProduct ? 'Save changes' : 'Create product'}
+              {editing ? 'Save changes' : 'Create product'}
             </Button>
           </div>
         </form>

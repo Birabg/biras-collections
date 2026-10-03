@@ -40,7 +40,28 @@ export const addressSchema = z.object({
   isDefault: z.boolean().default(false),
 });
 
-export const updateAddressSchema = addressSchema.partial();
+/**
+ * Partial address update.
+ *
+ * Not `addressSchema.partial()`: in this Zod version that keeps the default, so
+ * `PATCH { city: 'Addis Ababa' }` also carried `isDefault: false` and silently
+ * cleared the customer's default delivery address. Written out so absent means
+ * absent and the service leaves the column alone.
+ */
+export const updateAddressSchema = z
+  .object({
+    fullName: addressSchema.shape.fullName,
+    phone: addressSchema.shape.phone,
+    region: addressSchema.shape.region,
+    city: addressSchema.shape.city,
+    subCity: addressSchema.shape.subCity,
+    kebele: addressSchema.shape.kebele,
+    streetAddress: addressSchema.shape.streetAddress,
+    additionalInfo: addressSchema.shape.additionalInfo,
+    isDefault: addressSchema.shape.isDefault.unwrap(),
+  })
+  .partial()
+  .refine((data) => Object.keys(data).length > 0, 'Provide at least one field to update');
 
 export const addressIdParam = z.object({ id: z.string().uuid('Invalid address') });
 

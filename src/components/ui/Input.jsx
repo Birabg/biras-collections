@@ -3,10 +3,29 @@ import { controlClass, fieldErrorText, fieldHintText, fieldLabel, idFromLabel } 
 
 /*
  * Input — labelled, error-aware text field.
- * Supports an optional leading `icon`, which is rendered (not spread onto the DOM).
+ *
+ * Supports an optional leading `icon` and trailing `suffix`, both rendered here
+ * rather than spread onto the DOM. The suffix exists for money fields: labelling
+ * the unit in the control is clearer than repeating "in ETB" in every label, and
+ * a currency number the user cannot see the unit of is a mistake waiting to
+ * happen.
  */
 const Input = forwardRef(
-  ({ label, error, hint, id, name, className = '', icon = null, required = false, ...props }, ref) => {
+  (
+    {
+      label,
+      error,
+      hint,
+      id,
+      name,
+      className = '',
+      icon = null,
+      suffix = null,
+      required = false,
+      ...props
+    },
+    ref,
+  ) => {
     const inputId = idFromLabel(label, name || id);
     const describedBy = error ? `${inputId}-error` : hint ? `${inputId}-hint` : undefined;
 
@@ -43,12 +62,22 @@ const Input = forwardRef(
             className={controlClass(Boolean(error), [
               'h-12',
               icon ? 'pl-11' : '',
+              suffix ? 'pr-16' : '',
               className,
             ]
               .filter(Boolean)
               .join(' '))}
             {...props}
           />
+
+          {suffix && (
+            <span
+              className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[0.8125rem] text-ink-40"
+              aria-hidden="true"
+            >
+              {suffix}
+            </span>
+          )}
         </div>
 
         {error ? (

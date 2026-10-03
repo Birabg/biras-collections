@@ -1,10 +1,13 @@
 /**
  * Actors, roles and permissions — the single source of truth.
  *
- * NOTE: this project has no backend, so no role vocabulary existed to preserve.
- * These names are defined here in ONE place on purpose. When the real API
- * lands, map its role strings onto ROLES in `authService.js` — no component
- * needs to change, because nothing outside this file compares role strings.
+ * The backend is the enforcement point (`backend/src/middleware/auth.ts`); this
+ * table is what the UI hides things with. The two must agree, which is why the
+ * role vocabulary and the transition rules are mirrored in `utils/orderStatus.js`
+ * and normalised in one place rather than compared as raw strings.
+ *
+ * Nothing outside this file compares role strings, so a change here reaches every
+ * component at once.
  */
 
 /* ------------------------------------------------------------------ actors */

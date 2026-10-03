@@ -205,19 +205,16 @@ type CreateProductData = {
   isFeatured: boolean;
   isNew: boolean;
   isBestSeller: boolean;
-  images: Array<{ url: string; altText?: string; sortOrder: number }>;
-  variants: Array<{
-    sku: string;
-    size?: string | null;
-    color?: string | null;
-    colorHex?: string | null;
-    price?: number | null;
-    compareAtPrice?: number | null;
-    stockQuantity: number;
-    lowStockThreshold: number;
-    isActive: boolean;
-  }>;
+  images: IncomingImage[];
+  variants: IncomingVariant[];
 };
+
+/**
+ * A create supplies every image field; an update may omit `sortOrder`, so the
+ * write side defaults it to the array position. Keying order off the payload
+ * rather than a stored column means a reorder is a single write.
+ */
+type IncomingImage = { url: string; altText?: string; sortOrder?: number };
 
 export async function createProduct(data: CreateProductData) {
   const product = await prisma.product.create({
@@ -238,7 +235,7 @@ export async function createProduct(data: CreateProductData) {
       isFeatured: data.isFeatured,
       isNew: data.isNew,
       isBestSeller: data.isBestSeller,
-      images: { create: data.images },
+      images: { create: data.images.map((image, index) => ({ ...image, sortOrder: image.sortOrder ?? index })) },
       variants: { create: data.variants },
     },
     include: {
@@ -252,50 +249,146 @@ export async function createProduct(data: CreateProductData) {
 }
 
 export async function updateProduct(id: string, data: Partial<CreateProductData>) {
-  const existing = await prisma.product.findUnique({ where: { id } });
+  const product = await prisma.$transaction(async (tx) => {
+    const existing = await tx.product.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundError('That product could not be found.');
 
-  if (!existing) throw new NotFoundError('That product could not be found.');
+    // Variants are reconciled first so the product row is only written once the
+    // variant set is known to be consistent.
+    if (data.variants !== undefined) {
+      await mergeVariants(tx, id, data.variants);
+    }
 
-  const product = await prisma.product.update({
-    where: { id },
-    data: {
-      ...(data.name !== undefined && { name: data.name }),
-      ...(data.slug !== undefined && { slug: data.slug }),
-      ...(data.sku !== undefined && { sku: data.sku }),
-      ...(data.description !== undefined && { description: data.description }),
-      ...(data.shortDescription !== undefined && { shortDescription: data.shortDescription }),
-      ...(data.price !== undefined && { price: data.price }),
-      ...(data.compareAtPrice !== undefined && { compareAtPrice: data.compareAtPrice }),
-      ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
-      ...(data.subcategory !== undefined && { subcategory: data.subcategory }),
-      ...(data.badge !== undefined && { badge: data.badge }),
-      ...(data.rating !== undefined && { rating: data.rating }),
-      ...(data.reviewCount !== undefined && { reviewCount: data.reviewCount }),
-      ...(data.isActive !== undefined && { isActive: data.isActive }),
-      ...(data.isFeatured !== undefined && { isFeatured: data.isFeatured }),
-      ...(data.isNew !== undefined && { isNew: data.isNew }),
-      ...(data.isBestSeller !== undefined && { isBestSeller: data.isBestSeller }),
-      ...(data.images !== undefined && {
-        images: { deleteMany: {}, create: data.images },
-      }),
-      ...(data.variants !== undefined && {
-        // Variants are replaced wholesale by the admin form. Stock levels on
-        // existing variants are not silently overwritten: the update keeps each
-        // variant's current stock unless the admin supplies a new one.
-        variants: {
-          deleteMany: {},
-          create: data.variants,
-        },
-      }),
-    },
-    include: {
-      category: true,
-      images: { orderBy: { sortOrder: 'asc' } },
-      variants: true,
-    },
+    return tx.product.update({
+      where: { id },
+      data: {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.slug !== undefined && { slug: data.slug }),
+        ...(data.sku !== undefined && { sku: data.sku }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.shortDescription !== undefined && { shortDescription: data.shortDescription }),
+        ...(data.price !== undefined && { price: data.price }),
+        ...(data.compareAtPrice !== undefined && { compareAtPrice: data.compareAtPrice }),
+        ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
+        ...(data.subcategory !== undefined && { subcategory: data.subcategory }),
+        ...(data.badge !== undefined && { badge: data.badge }),
+        ...(data.rating !== undefined && { rating: data.rating }),
+        ...(data.reviewCount !== undefined && { reviewCount: data.reviewCount }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.isFeatured !== undefined && { isFeatured: data.isFeatured }),
+        ...(data.isNew !== undefined && { isNew: data.isNew }),
+        ...(data.isBestSeller !== undefined && { isBestSeller: data.isBestSeller }),
+        ...(data.images !== undefined && {
+          images: {
+            deleteMany: {},
+            create: data.images.map((image, index) => ({
+              ...image,
+              sortOrder: image.sortOrder ?? index,
+            })),
+          },
+        }),
+      },
+      include: {
+        category: true,
+        images: { orderBy: { sortOrder: 'asc' } },
+        variants: true,
+      },
+    });
   });
 
   return mapProduct(product);
+}
+
+type IncomingVariant = {
+  sku: string;
+  size?: string | null;
+  color?: string | null;
+  colorHex?: string | null;
+  price?: number | null;
+  compareAtPrice?: number | null;
+  stockQuantity?: number;
+  lowStockThreshold?: number;
+  isActive?: boolean;
+};
+type Tx = Prisma.TransactionClient;
+
+/**
+ * Reconciles an admin's variant list with the rows that exist, keyed by SKU.
+ *
+ * The previous implementation was `variants: { deleteMany: {}, create }`, which
+ * was wrong twice over:
+ *
+ *   1. `OrderItem.variant` has no `onDelete` rule, so Postgres refuses the
+ *      delete outright. Editing any product that had ever been ordered failed
+ *      with a foreign key violation — the "edit product" button could not work
+ *      on real inventory.
+ *   2. For a product that had not been ordered it succeeded while silently
+ *      discarding every size/colour variant and its stock levels, so saving a
+ *      one-line price correction reset a whole size run to a single default row.
+ *
+ * So: match on SKU, update in place, create what is new, and deactivate what is
+ * absent rather than deleting it. Deactivation is the right semantics for "no
+ * longer for sale" — carts and order history stay resolvable, while every
+ * storefront and admin read drops it, because those all filter on `isActive`.
+ */
+async function mergeVariants(tx: Tx, productId: string, incoming: IncomingVariant[]) {
+  const current = await tx.productVariant.findMany({
+    where: { productId },
+    select: { id: true, sku: true },
+  });
+
+  const currentBySku = new Map(current.map((variant) => [variant.sku, variant]));
+
+  for (const variant of incoming) {
+    const existing = currentBySku.get(variant.sku);
+
+    if (existing) {
+      // Only the fields the admin actually sent are written. Anything omitted
+      // keeps the row's current value, so a partial update that mentions one
+      // variant cannot quietly reset stock or thresholds on the rest.
+      await tx.productVariant.update({
+        where: { id: existing.id },
+        data: {
+          ...(variant.size !== undefined && { size: variant.size ?? null }),
+          ...(variant.color !== undefined && { color: variant.color ?? null }),
+          ...(variant.colorHex !== undefined && { colorHex: variant.colorHex ?? null }),
+          ...(variant.price !== undefined && { price: variant.price ?? null }),
+          ...(variant.compareAtPrice !== undefined && { compareAtPrice: variant.compareAtPrice ?? null }),
+          ...(variant.stockQuantity !== undefined && { stockQuantity: variant.stockQuantity }),
+          ...(variant.lowStockThreshold !== undefined && {
+            lowStockThreshold: variant.lowStockThreshold,
+          }),
+          ...(variant.isActive !== undefined && { isActive: variant.isActive }),
+        },
+      });
+    } else {
+      await tx.productVariant.create({
+        data: {
+          productId,
+          sku: variant.sku,
+          size: variant.size ?? null,
+          color: variant.color ?? null,
+          colorHex: variant.colorHex ?? null,
+          price: variant.price ?? null,
+          compareAtPrice: variant.compareAtPrice ?? null,
+          stockQuantity: variant.stockQuantity ?? 0,
+          lowStockThreshold: variant.lowStockThreshold ?? 5,
+          isActive: variant.isActive ?? true,
+        },
+      });
+    }
+  }
+
+  // Variants dropped from the payload are retired rather than deleted.
+  const incomingSkus = new Set(incoming.map((variant) => variant.sku));
+  const removed = current.filter((variant) => !incomingSkus.has(variant.sku));
+
+  if (removed.length > 0) {
+    await tx.productVariant.updateMany({
+      where: { id: { in: removed.map((variant) => variant.id) } },
+      data: { isActive: false },
+    });
+  }
 }
 
 /**

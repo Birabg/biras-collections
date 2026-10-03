@@ -100,7 +100,74 @@ export const createProductSchema = z.object({
   variants: z.array(variantSchema).max(200).default([]),
 });
 
-export const updateProductSchema = createProductSchema
+/*
+ * Partial update.
+ *
+ * This is written out rather than derived with `createProductSchema.partial()`,
+ * and that is deliberate. In this Zod version `.partial()` (and `.optional()`)
+ * applied to a field carrying a `.default()` still fills that default in, so a
+ * derived schema turned
+ *
+ *     PATCH { price: 4500 }
+ *
+ * into
+ *
+ *     PATCH { price: 4500, rating: 0, reviewCount: 0, isActive: true,
+ *             isFeatured: false, isNew: false, isBestSeller: false,
+ *             images: [], variants: [] }
+ *
+ * which reset the review score, republished disabled products, cleared every
+ * image and retired every variant. Worse, `PATCH {}` passed validation, so an
+ * empty body was silently accepted as "reset the product to defaults".
+ *
+ * The fields below therefore carry no defaults: absent means absent, and the
+ * service's `data.x !== undefined` guards leave untouched columns alone.
+ */
+const updateProductShape = {
+  name: createProductSchema.shape.name,
+  slug: createProductSchema.shape.slug,
+  sku: createProductSchema.shape.sku,
+  description: createProductSchema.shape.description,
+  shortDescription: createProductSchema.shape.shortDescription,
+  price: createProductSchema.shape.price,
+  compareAtPrice: createProductSchema.shape.compareAtPrice,
+  categoryId: createProductSchema.shape.categoryId,
+  subcategory: createProductSchema.shape.subcategory,
+  badge: createProductSchema.shape.badge,
+  rating: createProductSchema.shape.rating.unwrap(),
+  reviewCount: createProductSchema.shape.reviewCount.unwrap(),
+  isActive: createProductSchema.shape.isActive.unwrap(),
+  isFeatured: createProductSchema.shape.isFeatured.unwrap(),
+  isNew: createProductSchema.shape.isNew.unwrap(),
+  isBestSeller: createProductSchema.shape.isBestSeller.unwrap(),
+
+  // Image and variant defaults live on the inner object schemas, and the service
+  // treats "key absent" differently from "key present and empty" — so the inner
+  // objects are partial too. `sku` stays required: it is the key the service
+  // reconciles variants by, so a variant without one cannot be matched to a row.
+  images: z
+    .array(
+      z.object({
+        url: imageSchema.shape.url,
+        altText: imageSchema.shape.altText,
+        sortOrder: imageSchema.shape.sortOrder.unwrap().optional(),
+      }),
+    )
+    .max(12),
+  variants: z
+    .array(
+      z.object({
+        ...variantSchema.shape,
+        stockQuantity: variantSchema.shape.stockQuantity.unwrap().optional(),
+        lowStockThreshold: variantSchema.shape.lowStockThreshold.unwrap().optional(),
+        isActive: variantSchema.shape.isActive.unwrap().optional(),
+      }),
+    )
+    .max(200),
+};
+
+export const updateProductSchema = z
+  .object(updateProductShape)
   .partial()
   .refine((data) => Object.keys(data).length > 0, 'Provide at least one field to update');
 
@@ -131,6 +198,23 @@ export const createCategorySchema = z.object({
   sortOrder: z.coerce.number().int().min(0).max(9999).default(0),
 });
 
-export const updateCategorySchema = createCategorySchema.partial();
+/*
+ * Partial category update.
+ *
+ * Written out for the same reason as `updateProductSchema`: `.partial()` on a
+ * field with a `.default()` keeps the default, so a rename was also a silent
+ * republish (`isActive: true`) and a silent move to the front of the storefront
+ * ordering (`sortOrder: 0`).
+ */
+export const updateCategorySchema = z
+  .object({
+    name: createCategorySchema.shape.name,
+    slug: createCategorySchema.shape.slug,
+    description: createCategorySchema.shape.description,
+    image: createCategorySchema.shape.image,
+    isActive: createCategorySchema.shape.isActive.unwrap(),
+    sortOrder: createCategorySchema.shape.sortOrder.unwrap(),
+  })
+  .partial();
 
 export const categoryIdParam = z.object({ id: z.string().uuid('Invalid category identifier') });
